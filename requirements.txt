@@ -1,0 +1,10 @@
+# Core VoltMem uses only the Python stdlib — no packages required for
+# voltmem/, demo.py, or tests/test_voltmem.py.
+#
+# Install experiment dependencies only:
+#   pip install -r requirements-experiments.txt
+#
+# Install everything (includes experiments):
+#   pip install -r requirements.txt
+
+-r requirements-experiments.txt
