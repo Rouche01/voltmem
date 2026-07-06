@@ -17,9 +17,9 @@ one fixed global strength, forcing a tradeoff between remembering old things
 and adapting to new ones. VoltMem scales that protection per memory item by
 an independently-measured domain volatility estimate:
 
-```
-w_d = 1 / V_d^γ
-```
+$$
+w_d = \frac{1}{V_d^{\gamma}}
+$$
 
 High volatility (current task, emotional context) → low protection weight →
 memory updates readily. Low volatility (personality trait, core preference) →
@@ -27,14 +27,28 @@ high protection weight → memory resists overwriting.
 
 The escalation decision (audit vs. retrieve-as-is) is governed by:
 
-```
-E_t = [M_t · R_t / C^α] · V_d · G_t
-```
+$$
+E_t = \left[\frac{M_t \cdot R_t}{C^{\alpha}}\right] \cdot V_d \cdot G_t
+$$
 
-Where `M_t` is mismatch magnitude, `R_t` is source reliability, `C` is
-repetition count, `V_d` is domain volatility, and `G_t` is goal-attainment
-delta. Escalate (audit + update) if `E_t > θ_t`, otherwise retrieve directly
-from existing calibration.
+$$
+\theta_t = \theta_0 \cdot \frac{1}{V_d} \cdot L_t
+$$
+
+Where $M_t$ is mismatch magnitude, $R_t$ is source reliability, $C$ is
+repetition count, $V_d$ is domain volatility, $G_t$ is goal-attainment
+delta, and $L_t$ is cognitive load. Escalate (audit + update) if
+$E_t > \theta_t$, otherwise retrieve directly from existing calibration.
+
+Retrieval ranking also down-weights stale volatile memories:
+
+$$
+\text{staleness} = 1 - e^{-V_d \cdot \text{age}_{\text{days}}}
+$$
+
+$$
+\text{score} = \text{semantic similarity} \cdot \left(1 - V_d \cdot \text{staleness}\right)
+$$
 
 Full derivation and experimental results: [arXiv link — coming soon]
 
@@ -171,8 +185,6 @@ derivation is in the arXiv paper.
 ```
 torch
 numpy
-reportlab      # only needed to regenerate the PDF writeup
-matplotlib     # only needed for the PDF writeup
 ```
 
 No LLM SDK required. SQLite is part of Python's standard library.
