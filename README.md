@@ -154,7 +154,9 @@ The experiment went through two iterations — the first produced a null result
 due to measurement bugs (documented in `experiments/ewc_baseline_v1.py`).
 The fix and the diagnosis are both part of the record.
 
-Full writeup: [arXiv — coming soon]
+## Writeup 
+- [PDF (pre-arXiv draft)](paper/volatility_ewc_portfolio.pdf)
+- [arXiv — coming soon]
 
 ---
 
