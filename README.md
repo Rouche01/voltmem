@@ -69,7 +69,7 @@ system = f"What you know about this user:\n{context}"
 | Method | Description |
 |---|---|
 | `create_memory(db, user_id)` | Factory with auto-detected embeddings |
-| `Memory.add(text \| messages)` | Store a fact; updates related memories when appropriate |
+| `Memory.add(text \| messages)` | Store a fact; slot-aware linking updates related memories |
 | `Memory.search(query, limit=5)` | Ranked memories (relevance + freshness) |
 | `Memory.get_all()` | All active memories for this user |
 | `Memory.delete(id)` | Remove one memory |
@@ -99,7 +99,7 @@ Run locally with `pip install -e ".[embeddings]"`. Embeddings:
 | User moves Berlin → Paris | 2 location facts (stale + current) | **1** current fact |
 | Paraphrase blip on stable pref | adopts blip ("really like short replies") | **keeps** original ("concise, direct answers") |
 
-**`experiments/mem0_comparison.py`** — 3 scenarios, top-1 search (ADD-only baseline):
+**`experiments/mem0_comparison.py`** — 3 scenarios, top-1 search (always-add baseline):
 
 | Scenario | always-add | VoltMem |
 |---|---|---|
@@ -107,8 +107,19 @@ Run locally with `pip install -e ".[embeddings]"`. Embeddings:
 | `stable_pref_blip` | LOSE | **WIN** |
 | `volatile_mood` | LOSE (stale "great") | **WIN** (current "stressed") |
 
-**VoltMem clearer wins: 2/3.** Real Mem0: `python experiments/mem0_side_by_side.py`
-(requires `pip install mem0ai` + API key or local Ollama).
+**VoltMem clearer wins: 2/3** (always-add also finds Paris on location, but keeps stale facts).
+
+**`experiments/mem0_side_by_side.py`** — same 3 scenarios vs **real Mem0**
+(open-source, `gpt-4o-mini` + `text-embedding-3-small`):
+
+| Scenario | Mem0 | VoltMem |
+|---|---|---|
+| `location_update` | LOSE (stale "Berlin", 2 facts) | **WIN** ("Paris", 1 fact) |
+| `stable_pref_blip` | PARTIAL (adopts blip) | **WIN** (keeps "concise") |
+| `volatile_mood` | LOSE (stale "great", 2 facts) | **WIN** ("stressed", 1 fact) |
+
+**VoltMem clearer wins: 3/3.** Mem0 keeps contradictory facts; VoltMem updates volatile
+slots and protects stable prefs via domain volatility + slot-aware linking.
 
 **`experiments/memory_demo.py`** — 3 final Q&A checks vs ground truth:
 
@@ -126,6 +137,7 @@ facts and **tracks weak-but-true updates** on volatile ones. Full distributions:
 ```bash
 python examples/contradiction_demo.py
 python experiments/mem0_comparison.py
+python experiments/mem0_side_by_side.py   # pip install mem0ai; OPENAI_API_KEY or MEM0_BACKEND=ollama
 python experiments/memory_demo.py
 ```
 
@@ -165,7 +177,7 @@ bob   = create_memory("app.db", user_id="bob")
 |---|---|
 | `examples/contradiction_demo.py` | VoltMem vs always-add on contradictions |
 | `experiments/mem0_comparison.py` | 3-scenario head-to-head vs always-add |
-| `experiments/mem0_side_by_side.py` | 3-scenario head-to-head vs real Mem0 |
+| `experiments/mem0_side_by_side.py` | 3-scenario head-to-head vs real Mem0 (3/3 wedge) |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |
