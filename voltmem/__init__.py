@@ -34,6 +34,7 @@ Quick start:
 """
 
 from .memory import MemoryLayer, WriteResult, RetrieveResult
+from .client import Memory, create_memory
 from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor
@@ -45,6 +46,8 @@ from .scoring import (
 )
 
 __all__ = [
+    "Memory",
+    "create_memory",
     "MemoryLayer",
     "WriteResult",
     "RetrieveResult",

@@ -29,10 +29,12 @@ The returned callable maps a (query, content) pair to a similarity in [0, 1]
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
+import time
+import urllib.error
 import urllib.request
-import json
 from typing import Callable, Optional
 
 
@@ -111,9 +113,19 @@ class EmbeddingSimilarity:
                 payload = json.dumps({"model": model_name, "prompt": text}).encode()
                 req = urllib.request.Request(
                     url, data=payload, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read().decode())
-                return [float(x) for x in data["embedding"]]
+                last_err: Exception | None = None
+                for attempt in range(5):
+                    try:
+                        with urllib.request.urlopen(req, timeout=60) as resp:
+                            data = json.loads(resp.read().decode())
+                        return [float(x) for x in data["embedding"]]
+                    except urllib.error.HTTPError as e:
+                        last_err = e
+                        if e.code in (429, 500, 502, 503) and attempt < 4:
+                            time.sleep(2 ** attempt)
+                            continue
+                        raise
+                raise last_err  # type: ignore[misc]
 
             return embed
 

@@ -4,7 +4,10 @@ Tests for VoltMem — covering all core equation behaviours.
 import math
 import sys
 import time
-sys.path.insert(0, "/home/claude/voltmem")
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from voltmem import MemoryLayer, DOMAIN_VOLATILITY
 from voltmem.domains import MemoryItem

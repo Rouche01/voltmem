@@ -184,6 +184,15 @@ class MemoryStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def delete(self, item_id: str, namespace: str) -> bool:
+        """Delete one memory row. Returns True if a row was removed."""
+        cur = self._conn.execute(
+            "DELETE FROM memories WHERE id=? AND namespace=?",
+            (item_id, namespace),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def delete_namespace(self, namespace: str) -> None:
         """Remove every row for a tenant (including superseded history)."""
         self._conn.execute("DELETE FROM memories WHERE namespace=?", (namespace,))

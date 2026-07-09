@@ -9,7 +9,10 @@ Run: python demo.py  (uses a mock LLM so no API key needed)
 """
 
 import sys
-sys.path.insert(0, "/home/claude/voltmem")
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from voltmem import MemoryLayer
 
