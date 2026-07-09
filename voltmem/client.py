@@ -38,8 +38,8 @@ def create_memory(
         Use Ollama for domain classification and contradiction detection
         inside ``remember()`` (passed to ``MemoryLayer`` as ``extractor``).
     """
-    similarity_fn = None
-    if embeddings:
+    similarity_fn = kwargs.pop("similarity_fn", None)
+    if embeddings and similarity_fn is None:
         similarity_fn = EmbeddingSimilarity(verbose=verbose)
 
     fact_extractor = LLMFactExtractor() if llm_extract else HeuristicFactExtractor()

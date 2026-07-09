@@ -36,6 +36,26 @@ DOMAIN_VOLATILITY: dict[str, float] = {
     "transient_fact":       0.95,   # anything clearly moment-specific
 }
 
+# Domains that usually hold a single "current truth" slot (mood, city, task).
+# remember() uses a lower in-slot linking threshold for these.
+SLOT_DOMAINS: frozenset[str] = frozenset({
+    "emotional_context",
+    "location",
+    "current_task",
+    "transient_fact",
+})
+
+# Related domains searched together when linking a new statement to existing
+# memories (e.g. paraphrased prefs split across classifiers).
+DOMAIN_SIBLINGS: dict[str, frozenset[str]] = {
+    "core_preference": frozenset({"core_preference", "stated_preference"}),
+    "stated_preference": frozenset({"core_preference", "stated_preference"}),
+}
+
+# Minimum semantic overlap to link a lone item in a volatile slot when the
+# volatility-scaled threshold is not quite met.
+SLOT_LINK_FLOOR: float = 0.30
+
 # Source reliability weights (R_t in the escalation equation)
 # Higher = more trustworthy signal for both write and mismatch detection
 SOURCE_RELIABILITY: dict[str, float] = {

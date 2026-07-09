@@ -87,10 +87,46 @@ Advanced: `mem.layer` exposes `MemoryLayer` for low-level `observe()` / `write()
 | Old project name in haystack | Ranks by similarity | **Down-ranks** stale volatile facts |
 | Confident wrong blip on stable pref | Often accepted | **Resists** corruption |
 
-Run the side-by-side demo:
+### Example results (reproducible)
+
+Run locally with `pip install -e ".[embeddings]"`. Embeddings:
+`sentence-transformers` (`all-MiniLM-L6-v2`).
+
+**`examples/contradiction_demo.py`** — 5-turn script vs naive always-add:
+
+| After scenario | always-add | VoltMem |
+|---|---|---|
+| User moves Berlin → Paris | 2 location facts (stale + current) | **1** current fact |
+| Paraphrase blip on stable pref | adopts blip ("really like short replies") | **keeps** original ("concise, direct answers") |
+
+**`experiments/mem0_comparison.py`** — 3 scenarios, top-1 search (ADD-only baseline):
+
+| Scenario | always-add | VoltMem |
+|---|---|---|
+| `location_update` | WIN (2 facts stored) | WIN (**1** fact) |
+| `stable_pref_blip` | LOSE | **WIN** |
+| `volatile_mood` | LOSE (stale "great") | **WIN** (current "stressed") |
+
+**VoltMem clearer wins: 2/3.** Real Mem0: `python experiments/mem0_side_by_side.py`
+(requires `pip install mem0ai` + API key or local Ollama).
+
+**`experiments/memory_demo.py`** — 3 final Q&A checks vs ground truth:
+
+| Policy | Score |
+|---|---|
+| **VoltMem** | **3/3** |
+| never-overwrite | 2/3 |
+| always-overwrite | 1/3 |
+| reliability-threshold | 1/3 |
+
+VoltMem is the only policy that both **rejects confident false blips** on stable
+facts and **tracks weak-but-true updates** on volatile ones. Full distributions:
+[docs/RESEARCH.md](docs/RESEARCH.md) (`llm_memory_bench.py`).
 
 ```bash
 python examples/contradiction_demo.py
+python experiments/mem0_comparison.py
+python experiments/memory_demo.py
 ```
 
 ---
@@ -128,7 +164,8 @@ bob   = create_memory("app.db", user_id="bob")
 | Script | What it shows |
 |---|---|
 | `examples/contradiction_demo.py` | VoltMem vs always-add on contradictions |
-| `experiments/mem0_comparison.py` | 3-scenario head-to-head table |
+| `experiments/mem0_comparison.py` | 3-scenario head-to-head vs always-add |
+| `experiments/mem0_side_by_side.py` | 3-scenario head-to-head vs real Mem0 |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |

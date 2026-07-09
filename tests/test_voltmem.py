@@ -256,6 +256,103 @@ def test_remember_updates_related_fact():
         assert len(locs) == 1, "should update in place, not create a 2nd location"
 
 
+def _mock_similarity(pairs: dict[tuple[str, str], float]):
+    """Build a deterministic similarity fn for linking tests."""
+    def sim(a: str, b: str) -> float:
+        if a == b:
+            return 1.0
+        if (a, b) in pairs:
+            return pairs[(a, b)]
+        if (b, a) in pairs:
+            return pairs[(b, a)]
+        qa, qb = set(a.lower().split()), set(b.lower().split())
+        if not qa or not qb:
+            return 0.0
+        return len(qa & qb) / max(len(qa), len(qb))
+    return sim
+
+
+def test_remember_slot_fallback_links_volatile_mood():
+    """Paraphrased mood below global threshold still routes through observe()."""
+    mood_a = "I'm feeling great today"
+    mood_b = "I'm pretty stressed this week"
+    sim_fn = _mock_similarity({(mood_a, mood_b): 0.44})
+    with MemoryLayer(":memory:", similarity_fn=sim_fn) as mem:
+        mem.remember(mood_a)
+        res = mem.remember(mood_b)
+        assert res.action == "audited", res.action
+        assert len(mem._active(domain="emotional_context")) == 1
+        assert "stressed" in res.item.content
+
+
+def test_remember_slot_fallback_protects_stable_pref():
+    """Stable pref blip links in-slot but volatility engine keeps original."""
+    pref = "I prefer concise, direct answers"
+    blip = "I really like short replies"
+    sim_fn = _mock_similarity({(pref, blip): 0.50})
+    with MemoryLayer(":memory:", similarity_fn=sim_fn) as mem:
+        mem.remember(pref)
+        res = mem.remember(blip)
+        assert res.action == "logged_mismatch", res.action
+        assert len(mem._active()) == 1
+        assert "concise" in res.item.content
+        top = mem.recall("how should I format replies", top_k=1)
+        assert top and "concise" in top[0].lower()
+
+
+def test_remember_slot_fallback_updates_location():
+    """Location paraphrase below global threshold still supersedes stale city."""
+    berlin = "I live in Berlin"
+    paris = "I live in Paris now"
+    sim_fn = _mock_similarity({(berlin, paris): 0.53})
+    with MemoryLayer(":memory:", similarity_fn=sim_fn) as mem:
+        mem.remember(berlin)
+        res = mem.remember(paris)
+        assert res.action == "audited", res.action
+        assert len(mem._active(domain="location")) == 1
+        assert "Paris" in res.item.content
+
+
+def test_remember_cross_domain_no_false_link():
+    """Unrelated domains must not be merged by slot fallback."""
+    with MemoryLayer(":memory:") as mem:
+        mem.remember("I live in Berlin")
+        mem.remember("I prefer concise, direct answers")
+        assert len(mem._active()) == 2
+        assert len(mem._active(domain="location")) == 1
+        assert len(mem._active(domain="core_preference")) == 1
+
+
+def test_remember_preference_sibling_domains_link():
+    """Prefs split across core/stated classifiers still share one slot."""
+    pref = "I prefer concise, direct answers"
+    blip = "I really like short replies"
+    sim_fn = _mock_similarity({(pref, blip): 0.50})
+    with MemoryLayer(":memory:", similarity_fn=sim_fn) as mem:
+        mem.remember(pref)
+        res = mem.remember(blip)
+        assert res.action == "logged_mismatch", res.action
+        domains = {i.domain for i in mem._active()}
+        assert domains == {"core_preference"}
+
+
+def test_remember_multi_fact_domain_ambiguous_no_link():
+    """Two distinct projects must not collide on a weak, ambiguous update."""
+    a = "building the billing service"
+    b = "migrating the user database"
+    vague = "working on infrastructure improvements"
+    sim_fn = _mock_similarity({
+        (vague, a): 0.40,
+        (vague, b): 0.38,
+    })
+    with MemoryLayer(":memory:", similarity_fn=sim_fn) as mem:
+        mem.write(a, domain="current_project")
+        mem.write(b, domain="current_project")
+        res = mem.remember(vague)
+        assert res.action == "inserted", res.action
+        assert len(mem._active(domain="current_project")) == 3
+
+
 def test_recall_returns_plain_strings():
     with MemoryLayer(":memory:") as mem:
         mem.remember("I prefer concise answers")
@@ -375,6 +472,12 @@ if __name__ == "__main__":
         test_observe_matches_right_item_in_multi_fact_domain,
         test_remember_classifies_domain_for_new_facts,
         test_remember_updates_related_fact,
+        test_remember_slot_fallback_links_volatile_mood,
+        test_remember_slot_fallback_protects_stable_pref,
+        test_remember_slot_fallback_updates_location,
+        test_remember_cross_domain_no_false_link,
+        test_remember_preference_sibling_domains_link,
+        test_remember_multi_fact_domain_ambiguous_no_link,
         test_recall_returns_plain_strings,
         test_for_user_isolates_memories,
         test_cross_tenant_observe_does_not_match,

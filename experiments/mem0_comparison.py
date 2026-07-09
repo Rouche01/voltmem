@@ -16,6 +16,16 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from voltmem import create_memory  # noqa: E402
+from voltmem.embeddings import EmbeddingSimilarity  # noqa: E402
+
+_SHARED_SIM: EmbeddingSimilarity | None = None
+
+
+def shared_similarity() -> EmbeddingSimilarity:
+    global _SHARED_SIM
+    if _SHARED_SIM is None:
+        _SHARED_SIM = EmbeddingSimilarity(backend="sentence-transformers")
+    return _SHARED_SIM
 
 
 class AlwaysAddMemory:
@@ -99,7 +109,12 @@ def score_scenario(
 
 def run_scenario(scenario: dict) -> dict[str, str]:
     naive = AlwaysAddMemory()
-    volt = create_memory(":memory:", user_id="demo", embeddings=True)
+    volt = create_memory(
+        ":memory:",
+        user_id="demo",
+        embeddings=False,
+        similarity_fn=shared_similarity(),
+    )
 
     for turn in scenario["turns"]:
         naive.add(turn)

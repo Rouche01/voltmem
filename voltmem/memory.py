@@ -32,7 +32,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
+from .domains import (
+    MemoryItem,
+    DOMAIN_VOLATILITY,
+    SLOT_DOMAINS,
+    DOMAIN_SIBLINGS,
+    SLOT_LINK_FLOOR,
+)
 from .extract import HeuristicExtractor
 from .store import MemoryStore
 from .scoring import (
@@ -337,6 +343,18 @@ class MemoryLayer:
                 at_time=at_time,
             )
         dom = domain or self._extractor.classify_domain(text)
+        slot_match, slot_sim = self._best_match_in_slot(text, dom)
+        if slot_match is not None:
+            mismatch = self._extractor.mismatch(
+                text, slot_match.content, slot_sim)
+            return self.observe(
+                content=text,
+                domain=slot_match.domain,
+                mismatch_magnitude=mismatch,
+                source=source,
+                tags=tags,
+                at_time=at_time,
+            )
         return self.write(text, domain=dom, source=source, tags=tags, at_time=at_time)
 
     def recall(
@@ -484,6 +502,48 @@ class MemoryLayer:
             key=lambda it: (self._similarity_fn(content, it.content),
                             it.last_confirmed_at),
         )
+
+    def _linking_domains(self, domain: str) -> frozenset[str]:
+        return DOMAIN_SIBLINGS.get(domain, frozenset({domain}))
+
+    def _slot_relate_threshold(self, domain: str) -> float:
+        """Volatility-scaled in-domain link bar (lower than global relate)."""
+        V_d = DOMAIN_VOLATILITY.get(domain, 0.5)
+        return max(SLOT_LINK_FLOOR, self.relate_threshold - 0.12 - 0.10 * V_d)
+
+    def _best_match_in_slot(
+        self, content: str, domain: str
+    ) -> tuple[Optional[MemoryItem], float]:
+        """Link within a domain slot when global relate misses a paraphrase.
+
+        Volatile singleton slots (mood, location) accept weaker overlap; domains
+        with several coexisting facts require a clearer best match.
+        """
+        group = self._linking_domains(domain)
+        items = [it for it in self._active() if it.domain in group]
+        if not items:
+            return None, 0.0
+
+        candidate = self._select_candidate(content, items)
+        sim = self._similarity_fn(content, candidate.content)
+        threshold = self._slot_relate_threshold(domain)
+
+        if len(items) > 1 and domain not in SLOT_DOMAINS:
+            threshold = max(threshold, self.relate_threshold - 0.05)
+            ranked = sorted(
+                (self._similarity_fn(content, it.content) for it in items),
+                reverse=True,
+            )
+            if len(ranked) >= 2 and ranked[0] - ranked[1] < 0.08:
+                return None, sim
+
+        if sim >= threshold:
+            return candidate, sim
+
+        if domain in SLOT_DOMAINS and len(items) == 1 and sim >= SLOT_LINK_FLOOR:
+            return candidate, sim
+
+        return None, sim
 
     def _best_match_global(
         self, content: str, min_similarity: float
