@@ -37,7 +37,7 @@ from .memory import MemoryLayer, WriteResult, RetrieveResult
 from .client import Memory, create_memory
 from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
 from .embeddings import EmbeddingSimilarity
-from .extract import HeuristicExtractor, LLMExtractor
+from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
 from .scoring import (
     escalation_score,
     retrieval_score,
@@ -57,6 +57,8 @@ __all__ = [
     "EmbeddingSimilarity",
     "HeuristicExtractor",
     "LLMExtractor",
+    "HeuristicFactExtractor",
+    "LLMFactExtractor",
     "escalation_score",
     "retrieval_score",
     "staleness",

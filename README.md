@@ -44,14 +44,15 @@ hits = mem.search("where does the user live?", limit=3)
 print(hits[0]["memory"])   # Actually I moved to Paris last month
 ```
 
-### Message pairs
+### Message pairs (auto fact extraction)
 
 ```python
 mem.add([
-    {"role": "user", "content": "I'm working on a Postgres migration"},
-    {"role": "assistant", "content": "Got it — I'll keep database context in mind."},
-])
+    {"role": "user", "content": "I moved to Paris. I'm working on a DB migration."},
+], extract=True)   # default for message lists — splits into atomic facts
 ```
+
+Optional: `create_memory(..., llm_extract=True)` for Ollama-powered extraction.
 
 ### Inject into a prompt
 
@@ -127,6 +128,7 @@ bob   = create_memory("app.db", user_id="bob")
 | Script | What it shows |
 |---|---|
 | `examples/contradiction_demo.py` | VoltMem vs always-add on contradictions |
+| `experiments/mem0_comparison.py` | 3-scenario head-to-head table |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |

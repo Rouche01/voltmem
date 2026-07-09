@@ -30,6 +30,8 @@ from __future__ import annotations
 import json
 import re
 import urllib.request
+from dataclasses import dataclass
+from typing import Protocol
 
 from .domains import DOMAIN_VOLATILITY
 
@@ -157,3 +159,107 @@ class LLMExtractor:
         except Exception:
             pass
         return self.fallback.mismatch(new_text, existing_text, similarity)
+
+
+# ── multi-fact extraction (conversation → atomic facts) ─────────────────────
+
+@dataclass
+class ExtractedFact:
+    content: str
+    domain: str | None = None
+    source: str = "explicit_statement"
+
+
+class FactExtractor(Protocol):
+    def extract(self, messages: list[dict[str, str]]) -> list[ExtractedFact]:
+        ...
+
+
+def _split_user_sentences(text: str) -> list[str]:
+    """Light split for heuristic multi-fact extraction."""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+class HeuristicFactExtractor:
+    """Dependency-free: one fact per user sentence in the message list."""
+
+    def extract(self, messages: list[dict[str, str]]) -> list[ExtractedFact]:
+        domain_fn = HeuristicExtractor().classify_domain
+        facts: list[ExtractedFact] = []
+        for msg in messages:
+            if msg.get("role", "user") != "user":
+                continue
+            content = str(msg.get("content", "")).strip()
+            if not content:
+                continue
+            for sentence in _split_user_sentences(content):
+                facts.append(ExtractedFact(
+                    content=sentence,
+                    domain=domain_fn(sentence),
+                ))
+        return facts
+
+
+class LLMFactExtractor:
+    """Extract atomic user facts from a conversation via local Ollama."""
+
+    def __init__(
+        self,
+        model: str = "qwen2.5-coder:14b",
+        ollama_url: str = "http://localhost:11434",
+        fallback: HeuristicFactExtractor | None = None,
+    ):
+        self.model = model
+        self.url = ollama_url.rstrip("/") + "/api/generate"
+        self.fallback = fallback or HeuristicFactExtractor()
+        self._domains = list(DOMAIN_VOLATILITY.keys())
+
+    def _generate(self, prompt: str) -> str:
+        payload = json.dumps({
+            "model": self.model, "prompt": prompt, "stream": False,
+            "options": {"temperature": 0.0},
+        }).encode()
+        req = urllib.request.Request(
+            self.url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode()).get("response", "")
+
+    def extract(self, messages: list[dict[str, str]]) -> list[ExtractedFact]:
+        if not messages:
+            return []
+        lines = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = str(msg.get("content", "")).strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        convo = "\n".join(lines)
+        opts = ", ".join(self._domains)
+        prompt = (
+            "Extract atomic user facts from this conversation as JSON.\n"
+            "Return ONLY a JSON array of objects with keys: fact (string), "
+            f"domain (one of: {opts}).\n"
+            "Skip assistant opinions. Use short standalone fact strings.\n"
+            f"Conversation:\n{convo}\n"
+            "JSON:"
+        )
+        try:
+            raw = self._generate(prompt)
+            start, end = raw.find("["), raw.rfind("]")
+            if start == -1 or end <= start:
+                raise ValueError("no JSON array in response")
+            rows = json.loads(raw[start:end + 1])
+            facts: list[ExtractedFact] = []
+            for row in rows:
+                fact = str(row.get("fact", "")).strip()
+                if not fact:
+                    continue
+                dom = str(row.get("domain", "")).strip().lower()
+                domain = dom if dom in DOMAIN_VOLATILITY else None
+                facts.append(ExtractedFact(content=fact, domain=domain))
+            if facts:
+                return facts
+        except Exception:
+            pass
+        return self.fallback.extract(messages)

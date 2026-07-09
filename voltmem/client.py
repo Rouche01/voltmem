@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from .embeddings import EmbeddingSimilarity
+from .extract import HeuristicFactExtractor, LLMFactExtractor
 from .memory import MemoryLayer, RetrieveResult, WriteResult
 
 Message = dict[str, str]
@@ -20,21 +21,40 @@ def create_memory(
     *,
     embeddings: bool = True,
     verbose: bool = False,
+    llm_extract: bool = False,
+    llm_domain: bool = False,
     **kwargs: Any,
 ) -> "Memory":
     """Create a production-ready memory instance with sensible defaults.
 
     Auto-detects an embedding backend when ``embeddings=True``
     (sentence-transformers → Ollama → offline hashing fallback).
+
+    Parameters
+    ----------
+    llm_extract : bool
+        Use Ollama to extract atomic facts from conversation message lists.
+    llm_domain : bool
+        Use Ollama for domain classification and contradiction detection
+        inside ``remember()`` (passed to ``MemoryLayer`` as ``extractor``).
     """
     similarity_fn = None
     if embeddings:
         similarity_fn = EmbeddingSimilarity(verbose=verbose)
+
+    fact_extractor = LLMFactExtractor() if llm_extract else HeuristicFactExtractor()
+
+    layer_kwargs = dict(kwargs)
+    if llm_domain:
+        from .extract import LLMExtractor
+        layer_kwargs["extractor"] = LLMExtractor()
+
     return Memory(
         user_id=user_id,
         db_path=db_path,
         similarity_fn=similarity_fn,
-        **kwargs,
+        fact_extractor=fact_extractor,
+        **layer_kwargs,
     )
 
 
@@ -42,15 +62,8 @@ class Memory:
     """Current-truth memory for LLM agents.
 
     Familiar ``add`` / ``search`` surface; VoltMem volatility engine underneath.
-  Volatile facts update; stable facts resist corruption; stale volatile memories
+    Volatile facts update; stable facts resist corruption; stale volatile memories
     rank lower at retrieval.
-
-    Examples
-    --------
-    >>> mem = create_memory("app.db", user_id="alice")
-    >>> mem.add("I live in Berlin")
-    >>> mem.add("Actually I moved to Paris")
-    >>> mem.search("where does the user live?")
     """
 
     def __init__(
@@ -60,9 +73,11 @@ class Memory:
         *,
         layer: Optional[MemoryLayer] = None,
         similarity_fn: Optional[Callable[[str, str], float]] = None,
+        fact_extractor: Optional[HeuristicFactExtractor] = None,
         **kwargs: Any,
     ):
         self.user_id = user_id
+        self._fact_extractor = fact_extractor or HeuristicFactExtractor()
         if layer is not None:
             self._layer = (
                 layer if layer.namespace == user_id else layer.for_user(user_id)
@@ -87,17 +102,24 @@ class Memory:
         data: AddInput,
         *,
         source: str = "explicit_statement",
+        extract: bool | None = None,
     ) -> Union[dict[str, Any], list[dict[str, Any]]]:
         """Store a fact or conversation turn(s).
 
         Accepts a plain string, one message dict ``{"role": ..., "content": ...}``,
-        or a list of message dicts (user turns are remembered; assistant optional).
+        or a list of message dicts. For message lists, ``extract=True`` (default)
+        pulls atomic user facts before storing.
         """
         if isinstance(data, str):
             return self._format_write(self._layer.remember(data, source=source))
         if isinstance(data, dict):
             return self._add_message(data, source=source)
         if isinstance(data, list):
+            if not data:
+                return []
+            do_extract = extract if extract is not None else True
+            if do_extract:
+                return self._add_extracted_facts(data, source=source)
             out = []
             for msg in data:
                 if not isinstance(msg, dict):
@@ -160,6 +182,21 @@ class Memory:
         self.close()
 
     # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _add_extracted_facts(
+        self, messages: list[Message], *, source: str
+    ) -> list[dict[str, Any]]:
+        facts = self._fact_extractor.extract(messages)
+        out: list[dict[str, Any]] = []
+        for fact in facts:
+            src = fact.source or source
+            if fact.domain:
+                result = self._layer.remember(
+                    fact.content, domain=fact.domain, source=src)
+            else:
+                result = self._layer.remember(fact.content, source=src)
+            out.append(self._format_write(result))
+        return out
 
     def _add_message(
         self, msg: Message, *, source: str

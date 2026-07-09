@@ -20,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: pip install -e .
+        run: pip install -e ".[embeddings]"
 
       - name: Run core tests
         run: python tests/test_voltmem.py
@@ -30,3 +30,6 @@ jobs:
 
       - name: Contradiction demo smoke test
         run: python examples/contradiction_demo.py
+
+      - name: Mem0-style comparison smoke test
+        run: python experiments/mem0_comparison.py

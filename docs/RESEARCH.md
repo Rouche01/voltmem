@@ -33,7 +33,7 @@ Split-MNIST; the agent-memory library validates it on update policy and retrieva
 |---|---|---|
 | Agent update policy | balanced **0.597** | real > flat > swap |
 | Agent retrieval (noisy haystack) | **0%** stale@1 vs **60%** cosine | PASS |
-| LongMemEval-S (pilot, n=12) | **91.7%** vs **75.0%** answer@5 | real > flat > swap |
+| LongMemEval-S (n=30, stratified) | **70.0%** answer@5 (real); cosine **73.3%** | swap **60.0%** < real; gains on `knowledge-update` |
 | Continual learning (Split-MNIST) | +0.055 REAL−SWAP | `--sabotage` passes |
 
 ---
@@ -61,7 +61,10 @@ See [paper/findings.md](../paper/findings.md) for full tables and limits. Highli
 4. **Library eval:** selective updating 100% (real) vs 50% (swap); retrieval separation +0.589 vs −0.267.
 5. **EMA robustness:** reliability-scaled updates; weak blips move volatility 2.5× less.
 6. **LLM memory bench:** only policy strong on both stable and volatile axes (balanced 0.597).
-7. **LongMemEval-S:** voltmem_real 0.917 vs similarity_only 0.750 answer@5 (12-instance pilot).
+7. **LongMemEval-S:** at n=30 (5 per question type), voltmem_real **0.700** vs
+   similarity_only **0.733** answer@5 — **does not beat cosine overall** at this
+   scale. Causal signal persists on `knowledge-update` (0.600 > 0.400 > 0.200).
+   12-instance pilot (0.917 vs 0.750) was optimistic; report scaled numbers.
 8. **Retrieval haystack:** 0% stale@1 vs 60% for cosine-only.
 
 ---
@@ -93,6 +96,18 @@ python tests/test_client.py
 ```
 
 Always run `--sabotage` on CL experiments before trusting raw accuracy gains.
+
+### LongMemEval-S results (scaled, n=30)
+
+| system | answer@5 | evidence@5 |
+|---|---|---|
+| voltmem_real | 0.700 | 0.800 |
+| similarity_only | 0.733 | 0.900 |
+| voltmem_flat | 0.733 | 0.900 |
+| voltmem_swap | 0.600 | 0.767 |
+
+Strongest type-level signal: `knowledge-update` (real 0.600 > flat 0.400 > swap 0.200).
+Overall answer@5 does not beat plain cosine at n=30 — report honestly.
 
 ---
 

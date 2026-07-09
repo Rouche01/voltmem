@@ -41,6 +41,23 @@ def test_delete_and_clear():
         assert mem.get_all() == []
 
 
+def test_add_messages_extracts_sentences():
+    with Memory(user_id="u4", db_path=":memory:") as mem:
+        out = mem.add([
+            {"role": "user", "content": "I live in Berlin. I prefer tea."},
+        ], extract=True)
+        assert len(out) >= 2
+        assert mem.get_all()
+
+
+def test_add_messages_no_extract():
+    with Memory(user_id="u5", db_path=":memory:") as mem:
+        out = mem.add([
+            {"role": "user", "content": "I live in Berlin. I prefer tea."},
+        ], extract=False)
+        assert len(out) == 1
+
+
 def test_multi_tenant_isolation():
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -59,6 +76,8 @@ if __name__ == "__main__":
     tests = [
         test_create_memory_and_add_search,
         test_add_messages_list,
+        test_add_messages_extracts_sentences,
+        test_add_messages_no_extract,
         test_delete_and_clear,
         test_multi_tenant_isolation,
     ]
