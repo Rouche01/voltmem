@@ -19,9 +19,9 @@ volatile memories rank lower at search time.
 ## Install
 
 ```bash
-pip install -e ".[embeddings]"    # from a clone
-# or, when published:
-# pip install voltmem[embeddings]
+pip install voltmem[embeddings]
+# from source:
+# pip install -e ".[embeddings]"
 ```
 
 Core library has **zero required dependencies**. Embeddings extras pull in
