@@ -36,6 +36,12 @@ Quick start:
 from .memory import MemoryLayer, WriteResult, RetrieveResult
 from .client import Memory, create_memory
 from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
+from .vector_index import (
+    VectorIndex,
+    BruteForceVectorIndex,
+    SqliteVectorIndex,
+    create_vector_index,
+)
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
 from .scoring import (
@@ -55,6 +61,10 @@ __all__ = [
     "DOMAIN_VOLATILITY",
     "SOURCE_RELIABILITY",
     "EmbeddingSimilarity",
+    "VectorIndex",
+    "BruteForceVectorIndex",
+    "SqliteVectorIndex",
+    "create_vector_index",
     "HeuristicExtractor",
     "LLMExtractor",
     "HeuristicFactExtractor",
@@ -65,4 +75,4 @@ __all__ = [
     "protection_weight",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

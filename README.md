@@ -72,14 +72,26 @@ system = f"What you know about this user:\n{context}"
 
 | Method | Description |
 |---|---|
-| `create_memory(db, user_id)` | Factory with auto-detected embeddings |
+| `create_memory(db, user_id)` | Factory with auto-detected embeddings + vector index |
 | `Memory.add(text \| messages)` | Store a fact; slot-aware linking updates related memories |
-| `Memory.search(query, limit=5)` | Ranked memories (relevance + freshness) |
+| `Memory.search(query, limit=5)` | ANN candidates + volatility re-rank (relevance + freshness) |
 | `Memory.get_all()` | All active memories for this user |
 | `Memory.delete(id)` | Remove one memory |
 | `Memory.clear()` | Wipe user namespace |
 
 Advanced: `mem.layer` exposes `MemoryLayer` for low-level `observe()` / `write()`.
+
+`create_memory(..., vector_index="auto")` enables a SQLite embedding index when an
+embedder is present (`"off"` restores full-scan retrieval). VoltMem always applies
+volatility re-ranking on top of vector candidates — not raw ANN results.
+
+```mermaid
+flowchart LR
+  Q[search query] --> E[embed query]
+  E --> V[vector index: top candidates]
+  V --> S[SQLite: load memory records]
+  S --> R[volatility re-rank → current truth]
+```
 
 ---
 

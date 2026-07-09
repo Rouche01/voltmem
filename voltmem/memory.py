@@ -30,7 +30,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from .domains import (
     MemoryItem,
@@ -39,6 +39,7 @@ from .domains import (
     DOMAIN_SIBLINGS,
     SLOT_LINK_FLOOR,
 )
+from .vector_index import VectorIndex, create_vector_index
 from .extract import HeuristicExtractor
 from .store import MemoryStore
 from .scoring import (
@@ -106,12 +107,25 @@ class MemoryLayer:
         extractor: Optional[object] = None,
         relate_threshold: float = 0.55,
         namespace: str = "default",
+        vector_index: Union[VectorIndex, str, None] = "auto",
+        embed_fn: Optional[Callable[[str], list[float]]] = None,
+        candidate_multiplier: int = 5,
     ):
         self._store = MemoryStore(db_path)
         self.load = load
         self.goal_delta_default = goal_delta_default
         self.namespace = namespace
         self._similarity_fn = similarity_fn or self._similarity
+        self._embed_fn = embed_fn
+        self.candidate_multiplier = max(1, candidate_multiplier)
+        if isinstance(vector_index, str):
+            self._vector_index = create_vector_index(
+                vector_index,
+                db_path,
+                has_embedder=self._embed_fn is not None,
+            )
+        else:
+            self._vector_index = vector_index
         # extractor powers the batteries-included remember(): infers domain and
         # contradiction so callers don't hand-supply them. Default is the
         # dependency-free heuristic; pass LLMExtractor() for higher quality.
@@ -144,6 +158,9 @@ class MemoryLayer:
         view._similarity_fn = self._similarity_fn
         view._extractor = self._extractor
         view.relate_threshold = self.relate_threshold
+        view._vector_index = self._vector_index
+        view._embed_fn = self._embed_fn
+        view.candidate_multiplier = self.candidate_multiplier
         return view
 
     # ── primary write path ────────────────────────────────────────────────────
@@ -175,6 +192,7 @@ class MemoryLayer:
             last_confirmed_at=now,
         )
         self._store.insert(item)
+        self._index_upsert(item)
         return WriteResult(action="inserted", item=item)
 
     # ── primary observe path ──────────────────────────────────────────────────
@@ -296,6 +314,8 @@ class MemoryLayer:
         # link old → new
         candidate.superseded_by = new_item.id
         self._store.update(candidate)
+        self._index_delete(candidate.id)
+        self._index_upsert(new_item)
 
         return WriteResult(
             action="audited",
@@ -412,16 +432,11 @@ class MemoryLayer:
             If False, rank by semantic similarity only (no volatility/freshness
             penalty). Useful as a baseline in retrieval benchmarks.
         """
-        candidates = (
-            self._active(domain=domain)
-            if domain
-            else self._active()
-        )
+        candidates = self._retrieve_candidates(query, domain, top_k)
 
         scored = []
         eval_now = now if now is not None else time.time()
-        for item in candidates:
-            sim = self._similarity_fn(query, item.content)
+        for item, sim in candidates:
             if use_staleness:
                 score = retrieval_score(item, sim, eval_now)
             else:
@@ -436,6 +451,13 @@ class MemoryLayer:
             items=[item for _, item in top],
             scores=[score for score, _ in top],
         )
+
+    def remove(self, item_id: str) -> bool:
+        """Delete one memory and drop it from the vector index."""
+        if not self._store.delete(item_id, self.namespace):
+            return False
+        self._index_delete(item_id)
+        return True
 
     # ── introspection ─────────────────────────────────────────────────────────
 
@@ -478,6 +500,54 @@ class MemoryLayer:
         }
 
     # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _retrieve_candidates(
+        self, query: str, domain: str | None, top_k: int
+    ) -> list[tuple[MemoryItem, float]]:
+        """ANN pre-filter when a vector index is configured; else full scan."""
+        if self._vector_index is not None and self._embed_fn is not None:
+            pool = max(top_k * self.candidate_multiplier, top_k)
+            hits = self._vector_index.search(
+                self._embed_fn(query),
+                self.namespace,
+                pool,
+                domain=domain,
+            )
+            out: list[tuple[MemoryItem, float]] = []
+            for item_id, sim in hits:
+                item = self._store.get(item_id)
+                if (
+                    item
+                    and item.is_active
+                    and item.namespace == self.namespace
+                    and (domain is None or item.domain == domain)
+                ):
+                    out.append((item, sim))
+            if out:
+                return out
+
+        items = self._active(domain=domain)
+        return [
+            (it, self._similarity_fn(query, it.content))
+            for it in items
+        ]
+
+    def _index_upsert(self, item: MemoryItem) -> None:
+        if self._vector_index is None or self._embed_fn is None:
+            return
+        if not item.is_active:
+            return
+        self._vector_index.upsert(
+            item.id,
+            item.namespace,
+            item.domain,
+            self._embed_fn(item.content),
+        )
+
+    def _index_delete(self, item_id: str) -> None:
+        if self._vector_index is None:
+            return
+        self._vector_index.delete(item_id, self.namespace)
 
     def _active(self, domain: str | None = None) -> list[MemoryItem]:
         """Active memories scoped to this layer's namespace."""
@@ -578,11 +648,15 @@ class MemoryLayer:
         return len(overlap) / max(len(q_words), len(c_words))
 
     def close(self):
+        if self._vector_index is not None:
+            self._vector_index.close()
         self._store.close()
 
     def clear(self) -> None:
         """Delete all memories for this layer's namespace."""
         self._store.delete_namespace(self.namespace)
+        if self._vector_index is not None:
+            self._vector_index.delete_namespace(self.namespace)
 
     def __enter__(self):
         return self

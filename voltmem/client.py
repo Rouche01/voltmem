@@ -23,6 +23,7 @@ def create_memory(
     verbose: bool = False,
     llm_extract: bool = False,
     llm_domain: bool = False,
+    vector_index: str = "auto",
     **kwargs: Any,
 ) -> "Memory":
     """Create a production-ready memory instance with sensible defaults.
@@ -32,6 +33,9 @@ def create_memory(
 
     Parameters
     ----------
+    vector_index : str
+        ``auto`` (sqlite index when embedder present), ``sqlite``, ``brute``,
+        or ``off`` for full-scan retrieval.
     llm_extract : bool
         Use Ollama to extract atomic facts from conversation message lists.
     llm_domain : bool
@@ -42,12 +46,17 @@ def create_memory(
     if embeddings and similarity_fn is None:
         similarity_fn = EmbeddingSimilarity(verbose=verbose)
 
+    embed_fn = getattr(similarity_fn, "embed", None)
+
     fact_extractor = LLMFactExtractor() if llm_extract else HeuristicFactExtractor()
 
     layer_kwargs = dict(kwargs)
     if llm_domain:
         from .extract import LLMExtractor
         layer_kwargs["extractor"] = LLMExtractor()
+
+    layer_kwargs.setdefault("vector_index", vector_index)
+    layer_kwargs.setdefault("embed_fn", embed_fn)
 
     return Memory(
         user_id=user_id,
@@ -161,8 +170,7 @@ class Memory:
         item = self._layer._store.get(memory_id)
         if not item or item.namespace != self.user_id:
             return False
-        self._layer._store.delete(memory_id, namespace=self.user_id)
-        return True
+        return self._layer.remove(memory_id)
 
     def clear(self) -> None:
         """Remove all memories for this user."""
