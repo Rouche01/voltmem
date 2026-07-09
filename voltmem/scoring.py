@@ -131,13 +131,33 @@ def retrieval_score(
     return float(semantic_similarity * (1.0 - weight * stale))
 
 
-def update_volatility_ema(item: MemoryItem, observed_mismatch: float) -> float:
+def update_volatility_ema(
+    item: MemoryItem,
+    observed_mismatch: float,
+    source: str = "explicit_statement",
+) -> float:
     """
     Update the per-item empirical volatility estimate via EMA.
     Called *before* any write/audit (pre-update, to avoid circularity).
 
+    The learning rate toward the new observation is scaled by the source's
+    reliability. A base step of (1 - BETA) is taken for a fully reliable source
+    (reliability >= 1.0); a low-trust source (e.g. weak_inference, R=0.4) takes a
+    proportionally smaller step, so the volatility estimate is not yanked around
+    by noisy signals. This is what stops a genuinely stable domain from drifting
+    "volatile" after a handful of weak, contradictory observations.
+
+        alpha   = (1 - BETA) * clamp(reliability, 0, 1)
+        updated = (1 - alpha) * current + alpha * observed_mismatch
+
+    For a fully reliable source this reduces exactly to the original
+    EMA (alpha = 1 - BETA), so reliable updates behave as before.
+
     Returns the updated EMA value.
     """
     current = item.effective_volatility
-    updated = BETA * current + (1 - BETA) * observed_mismatch
+    reliability = SOURCE_RELIABILITY.get(source, 0.5)
+    reliability = min(max(reliability, 0.0), 1.0)
+    alpha = (1.0 - BETA) * reliability
+    updated = (1.0 - alpha) * current + alpha * observed_mismatch
     return float(updated)

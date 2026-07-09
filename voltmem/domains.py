@@ -54,6 +54,7 @@ class MemoryItem:
     content:          str                    # the actual stored fact/preference
     domain:           str                    # one of DOMAIN_VOLATILITY keys
     source:           str                    # one of SOURCE_RELIABILITY keys
+    namespace:        str   = "default"      # tenant/user isolation key
 
     # Equation terms — updated over time
     repetition_count: int   = 1             # C: how many times confirmed

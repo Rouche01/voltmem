@@ -35,6 +35,8 @@ Quick start:
 
 from .memory import MemoryLayer, WriteResult, RetrieveResult
 from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
+from .embeddings import EmbeddingSimilarity
+from .extract import HeuristicExtractor, LLMExtractor
 from .scoring import (
     escalation_score,
     retrieval_score,
@@ -49,6 +51,9 @@ __all__ = [
     "MemoryItem",
     "DOMAIN_VOLATILITY",
     "SOURCE_RELIABILITY",
+    "EmbeddingSimilarity",
+    "HeuristicExtractor",
+    "LLMExtractor",
     "escalation_score",
     "retrieval_score",
     "staleness",

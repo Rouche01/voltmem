@@ -211,6 +211,144 @@ def test_summary():
         assert s["by_domain"]["emotional_context"] == 1
 
 
+# ── content-level matching (multi-fact domains) ────────────────────────────────
+
+def test_observe_matches_right_item_in_multi_fact_domain():
+    """Two distinct facts in one domain must not collide: an update should
+    supersede the semantically-matching item, leaving the other untouched."""
+    # use a volatile domain so a high-mismatch update actually audits
+    with MemoryLayer(":memory:") as mem:   # default keyword similarity
+        a = mem.write("building the billing service", domain="current_project")
+        b = mem.write("migrating the user database", domain="current_project")
+        res = mem.observe("now building the billing dashboard",
+                          domain="current_project", mismatch_magnitude=0.9,
+                          source="explicit_statement")
+        assert res.action == "audited", f"expected audit, got {res.action}"
+        # the database project must still be active and unchanged
+        active = {i.content for i in mem._store.all_active(domain="current_project")}
+        assert "migrating the user database" in active
+        # the billing item (the semantic match) was the one superseded
+        assert mem._store.get(a.item.id).superseded_by is not None
+        assert mem._store.get(b.item.id).superseded_by is None
+
+
+# ── batteries-included remember() / recall() ───────────────────────────────────
+
+def test_remember_classifies_domain_for_new_facts():
+    with MemoryLayer(":memory:") as mem:
+        assert mem.remember("I was born in Spain").item.domain == "biographical"
+        assert mem.remember("I feel anxious today").item.domain \
+            == "emotional_context"
+        assert mem.remember("I am working on the payments project").item.domain \
+            == "current_project"
+
+
+def test_remember_updates_related_fact():
+    """A follow-up statement about the same fact should update it, not duplicate."""
+    with MemoryLayer(":memory:") as mem:   # keyword similarity is enough here
+        mem.remember("I live in Berlin")
+        res = mem.remember("I live in Paris")
+        assert res.action in ("audited", "logged_mismatch"), res.action
+        locs = mem._store.all_active(domain="location")
+        assert len(locs) == 1, "should update in place, not create a 2nd location"
+
+
+def test_recall_returns_plain_strings():
+    with MemoryLayer(":memory:") as mem:
+        mem.remember("I prefer concise answers")
+        out = mem.recall("how should responses be written", top_k=3)
+        assert isinstance(out, list)
+        assert all(isinstance(s, str) for s in out)
+
+
+# ── multi-tenant namespacing ───────────────────────────────────────────────────
+
+def test_for_user_isolates_memories():
+    """Two tenants in one database must not see or overwrite each other's facts."""
+    with MemoryLayer(":memory:") as mem:
+        alice = mem.for_user("alice")
+        bob = mem.for_user("bob")
+
+        alice.remember("I live in Berlin")
+        bob.remember("I live in Paris")
+
+        assert alice.recall("where live", top_k=1) == ["I live in Berlin"]
+        assert bob.recall("where live", top_k=1) == ["I live in Paris"]
+
+        assert alice.summary()["namespace"] == "alice"
+        assert bob.summary()["namespace"] == "bob"
+        assert alice.summary()["total_active_memories"] == 1
+        assert bob.summary()["total_active_memories"] == 1
+
+
+def test_cross_tenant_observe_does_not_match():
+    """Bob's update must not supersede Alice's memory even in the same domain."""
+    with MemoryLayer(":memory:") as mem:
+        alice = mem.for_user("alice")
+        bob = mem.for_user("bob")
+
+        alice.write("User prefers dark mode", domain="core_preference")
+        bob.observe("User prefers light mode", domain="core_preference",
+                    mismatch_magnitude=0.9, source="explicit_statement")
+
+        alice_items = alice._active(domain="core_preference")
+        bob_items = bob._active(domain="core_preference")
+        assert len(alice_items) == 1
+        assert alice_items[0].content == "User prefers dark mode"
+        assert len(bob_items) == 1
+        assert bob_items[0].content == "User prefers light mode"
+
+
+def test_inspect_hides_other_namespace():
+    with MemoryLayer(":memory:") as mem:
+        alice = mem.for_user("alice")
+        bob = mem.for_user("bob")
+        r = alice.write("secret", domain="biographical")
+        info = bob.inspect(r.item.id)
+        assert "error" in info
+
+
+def test_clear_removes_namespace_memories():
+    with MemoryLayer(":memory:") as mem:
+        mem.remember("I live in Berlin")
+        assert mem.recall("where do I live")
+        mem.clear()
+        assert mem.recall("where do I live") == []
+
+
+def test_langchain_memory_roundtrip():
+    try:
+        from voltmem.integrations.langchain import VoltMemMemory
+    except ImportError:
+        print("  SKIP  test_langchain_memory_roundtrip (install requirements-integrations.txt)")
+        return
+
+    memory = VoltMemMemory(session_id="lc-test", db_path=":memory:", top_k=3)
+    try:
+        assert memory.load_memory_variables({"input": "hello"})["history"] == ""
+
+        memory.save_context(
+            {"input": "I live in Berlin"},
+            {"output": "Noted."},
+        )
+        vars_after = memory.load_memory_variables(
+            {"input": "Where do I live?"}
+        )
+        history = vars_after["history"]
+        assert "Berlin" in history
+
+        memory.save_context(
+            {"input": "Actually I moved to Paris"},
+            {"output": "Updated."},
+        )
+        vars_final = memory.load_memory_variables(
+            {"input": "Where do I live?"}
+        )
+        assert "Paris" in vars_final["history"]
+    finally:
+        memory.close()
+
+
 # ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -231,6 +369,15 @@ if __name__ == "__main__":
         test_high_mismatch_stable_does_not_supersede,
         test_inspect_returns_scoring_breakdown,
         test_summary,
+        test_observe_matches_right_item_in_multi_fact_domain,
+        test_remember_classifies_domain_for_new_facts,
+        test_remember_updates_related_fact,
+        test_recall_returns_plain_strings,
+        test_for_user_isolates_memories,
+        test_cross_tenant_observe_does_not_match,
+        test_inspect_hides_other_namespace,
+        test_clear_removes_namespace_memories,
+        test_langchain_memory_roundtrip,
     ]
 
     passed = failed = 0

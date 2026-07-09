@@ -1,2 +1,7 @@
 torch>=2.0
+torchvision>=0.15
 numpy>=1.24
+reportlab>=4.0          # paper/build_paper.py (regenerate the PDF)
+datasets>=2.0           # experiments/longmemeval.py (stream LongMemEval)
+# optional, for real semantic retrieval in the memory demo/benchmark:
+# sentence-transformers   # local embeddings (or run Ollama with an embed model)

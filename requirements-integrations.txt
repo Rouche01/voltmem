@@ -1,0 +1,4 @@
+# Optional framework adapters (LangChain memory hook).
+# Core VoltMem still runs without these.
+langchain-core>=0.3.0
+langchain>=0.3.0

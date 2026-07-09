@@ -27,19 +27,22 @@ CREATE TABLE IF NOT EXISTS memories (
     last_confirmed_at REAL    NOT NULL,
     last_audited_at   REAL    DEFAULT 0.0,
     tags              TEXT    DEFAULT '[]',
-    superseded_by     TEXT    DEFAULT NULL
+    superseded_by     TEXT    DEFAULT NULL,
+    namespace         TEXT    NOT NULL DEFAULT 'default'
 );
-CREATE INDEX IF NOT EXISTS idx_domain ON memories(domain);
-CREATE INDEX IF NOT EXISTS idx_active ON memories(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_domain ON memories(namespace, domain);
+CREATE INDEX IF NOT EXISTS idx_active ON memories(namespace, superseded_by);
 """
 
 
 def _row_to_item(row: sqlite3.Row) -> MemoryItem:
+    keys = row.keys()
     return MemoryItem(
         id=row["id"],
         content=row["content"],
         domain=row["domain"],
         source=row["source"],
+        namespace=row["namespace"] if "namespace" in keys else "default",
         repetition_count=row["repetition_count"],
         volatility_ema=row["volatility_ema"],
         mismatch_count=row["mismatch_count"],
@@ -62,7 +65,16 @@ class MemoryStore:
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_CREATE_TABLE)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive migrations for databases created by older versions."""
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(memories)")}
+        if "namespace" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN namespace "
+                "TEXT NOT NULL DEFAULT 'default'")
 
     # ── write ─────────────────────────────────────────────────────────────────
 
@@ -75,11 +87,16 @@ class MemoryStore:
         if not item.last_confirmed_at:
             item.last_confirmed_at = now
         self._conn.execute("""
-            INSERT INTO memories VALUES (
+            INSERT INTO memories (
+                id, content, domain, source,
+                repetition_count, volatility_ema, mismatch_count, goal_delta,
+                created_at, last_confirmed_at, last_audited_at,
+                tags, superseded_by, namespace
+            ) VALUES (
                 :id, :content, :domain, :source,
                 :repetition_count, :volatility_ema, :mismatch_count, :goal_delta,
                 :created_at, :last_confirmed_at, :last_audited_at,
-                :tags, :superseded_by
+                :tags, :superseded_by, :namespace
             )""", {
             "id": item.id,
             "content": item.content,
@@ -94,6 +111,7 @@ class MemoryStore:
             "last_audited_at": item.last_audited_at,
             "tags": json.dumps(item.tags),
             "superseded_by": item.superseded_by,
+            "namespace": item.namespace,
         })
         self._conn.commit()
         return item
@@ -135,28 +153,41 @@ class MemoryStore:
         ).fetchone()
         return _row_to_item(row) if row else None
 
-    def all_active(self, domain: str | None = None) -> list[MemoryItem]:
+    def all_active(
+        self, namespace: str | None = None, domain: str | None = None
+    ) -> list[MemoryItem]:
+        """Active (non-superseded) items. Scope to a tenant via `namespace`;
+        pass namespace=None only for cross-tenant/admin queries."""
+        clauses = ["superseded_by IS NULL"]
+        params: list[object] = []
+        if namespace is not None:
+            clauses.append("namespace=?")
+            params.append(namespace)
         if domain:
-            rows = self._conn.execute(
-                "SELECT * FROM memories WHERE superseded_by IS NULL AND domain=?",
-                (domain,)
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM memories WHERE superseded_by IS NULL"
-            ).fetchall()
+            clauses.append("domain=?")
+            params.append(domain)
+        sql = "SELECT * FROM memories WHERE " + " AND ".join(clauses)
+        rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_item(r) for r in rows]
 
-    def search_by_content(self, query: str, limit: int = 20) -> list[MemoryItem]:
+    def search_by_content(
+        self, query: str, namespace: str | None = None, limit: int = 20
+    ) -> list[MemoryItem]:
         """Simple keyword search — replace with embedding search for production."""
-        rows = self._conn.execute(
-            """SELECT * FROM memories
-               WHERE superseded_by IS NULL
-               AND LOWER(content) LIKE LOWER(:q)
-               LIMIT :lim""",
-            {"q": f"%{query}%", "lim": limit}
-        ).fetchall()
+        clauses = ["superseded_by IS NULL", "LOWER(content) LIKE LOWER(:q)"]
+        params: dict[str, object] = {"q": f"%{query}%", "lim": limit}
+        if namespace is not None:
+            clauses.append("namespace=:ns")
+            params["ns"] = namespace
+        sql = ("SELECT * FROM memories WHERE " + " AND ".join(clauses)
+               + " LIMIT :lim")
+        rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_item(r) for r in rows]
+
+    def delete_namespace(self, namespace: str) -> None:
+        """Remove every row for a tenant (including superseded history)."""
+        self._conn.execute("DELETE FROM memories WHERE namespace=?", (namespace,))
+        self._conn.commit()
 
     def close(self):
         self._conn.close()
