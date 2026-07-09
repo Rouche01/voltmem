@@ -1,5 +1,9 @@
 # VoltMem
 
+[![PyPI](https://img.shields.io/pypi/v/voltmem)](https://pypi.org/project/voltmem/)
+[![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
+[![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
+
 **Current-truth memory for LLM agents.**
 
 Most memory layers treat every fact the same — your hometown and today's mood get equal
