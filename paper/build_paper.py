@@ -29,11 +29,48 @@ from reportlab.platypus import (
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "volatility_ewc_portfolio.pdf")
 
+# Source of truth for arXiv abstract — keep paper/ARXIV_SUBMISSION.md in sync.
+ABSTRACT = (
+    "Standard continual-learning methods such as Elastic Weight Consolidation apply "
+    "a uniform protection strength to all past knowledge, forcing a "
+    "stability&ndash;plasticity tradeoff. We scale protection per domain by measured "
+    "volatility <i>before</i> any update, and validate claims with negative controls: "
+    "shuffling or inverting the domain&rarr;volatility map must degrade performance "
+    "monotonically (REAL &gt; SHUFFLE &gt; SWAP). On a synthetic benchmark with "
+    "disjoint task inputs, both retention and adaptation improve simultaneously. On "
+    "Split-MNIST the honest result is subtler: volatility weighting is not a "
+    "free-lunch Pareto win but a <b>causal control knob</b> that steers the "
+    "tradeoff. The same principle powers VoltMem, an open-source Python memory "
+    "library for LLM agents: volatility-aware write and retrieval policies beat "
+    "flat and inverted controls on scripted multi-turn scenarios (balanced score "
+    "0.597, only policy strong on both stable and volatile axes), a noisy retrieval "
+    "haystack (0% stale@1 vs 20% cosine-only; separation 0.153 vs &minus;0.003), "
+    "and a 3/3 current-truth case study vs Mem0 on mood, preference, and location "
+    "updates. On LongMemEval-S (n=60, chunk-calibrated RAG ingest), retrieval "
+    "answer@5 is 70.0% for VoltMem&mdash;tying plain cosine and beating the "
+    "inverted-volatility control (66.7%)&mdash;without claiming public-benchmark "
+    "SOTA (uniform-volatility ablation reaches 71.7%). We report limitations, "
+    "embedding-backend variance, failed early wins discarded by sabotage controls, "
+    "and open gaps in automatic domain discovery."
+)
+
+ABSTRACT_STYLE = ParagraphStyle(
+    "abstract", parent=None, fontName="Times-Roman", fontSize=10, leading=14,
+    alignment=TA_JUSTIFY, spaceAfter=6, leftIndent=8, rightIndent=8,
+)
+ABSTRACT_LABEL = ParagraphStyle(
+    "abstract_label", parent=None, fontName="Times-Bold", fontSize=11,
+    leading=14, alignment=TA_CENTER, spaceBefore=4, spaceAfter=6,
+)
+
 # ── styles ──────────────────────────────────────────────────────────────────
 ss = getSampleStyleSheet()
 BODY = ParagraphStyle("body", parent=ss["BodyText"], fontName="Times-Roman",
                       fontSize=10, leading=14, alignment=TA_JUSTIFY,
                       spaceAfter=6)
+REF = ParagraphStyle("ref", parent=BODY, fontName="Times-Roman", fontSize=9,
+                     leading=12, alignment=TA_JUSTIFY, spaceAfter=3,
+                     leftIndent=12, firstLineIndent=-12)
 H1 = ParagraphStyle("h1", parent=ss["Heading1"], fontName="Times-Bold",
                     fontSize=13, leading=16, spaceBefore=10, spaceAfter=4,
                     textColor=colors.HexColor("#1a1a1a"))
@@ -48,9 +85,12 @@ SUB = ParagraphStyle("sub", parent=ss["Normal"], fontName="Times-Italic",
 NOTE = ParagraphStyle("note", parent=ss["Normal"], fontName="Times-Italic",
                       fontSize=8.5, leading=11, alignment=TA_CENTER,
                       textColor=colors.HexColor("#666666"), spaceAfter=8)
-FORMULA = ParagraphStyle("formula", parent=BODY, fontName="Courier",
-                         alignment=TA_CENTER, spaceBefore=4, spaceAfter=8,
-                         textColor=colors.HexColor("#222222"))
+FORMULA = ParagraphStyle("formula", parent=BODY, fontName="Times-Roman",
+                         fontSize=11, leading=17, alignment=TA_CENTER,
+                         spaceBefore=4, spaceAfter=4,
+                         textColor=colors.HexColor("#1a1a1a"))
+FORMULA_BLOCK = ParagraphStyle("formula_block", parent=FORMULA,
+                               spaceBefore=8, spaceAfter=10)
 TLDR = ParagraphStyle("tldr", parent=BODY, backColor=colors.HexColor("#f4f4f2"),
                       borderPadding=8, leftIndent=2, rightIndent=2)
 CAP = ParagraphStyle("cap", parent=BODY, fontName="Times-Italic", fontSize=8.5,
@@ -62,8 +102,37 @@ def P(t, style=BODY):
     return Paragraph(t, style)
 
 
+def F(t, block=False):
+    """Centered display equation with HTML sub/superscripts."""
+    return Paragraph(t, FORMULA_BLOCK if block else FORMULA)
+
+
 def bullets(items):
     return [P(f"&bull;&nbsp;&nbsp;{t}") for t in items]
+
+
+def refs(items):
+    return [P(t, REF) for t in items]
+
+
+REFERENCES = [
+    "[1] Kirkpatrick, J., et al. Overcoming catastrophic forgetting in neural "
+    "networks. <i>PNAS</i>, 114(13):3521&ndash;3526, 2017.",
+    "[2] Lopez-Paz, D., &amp; Ranzato, M. Gradient episodic memory for continual "
+    "learning. <i>NeurIPS</i>, 2017.",
+    "[3] Zenke, F., et al. Continual learning through synaptic intelligence. "
+    "<i>ICML</i>, 2017.",
+    "[4] Schwarz, J., et al. Progress &amp; compress: A scalable framework for "
+    "continual learning. <i>ICML</i>, 2018.",
+    "[5] Wu, Z., et al. LongMemEval: Benchmarking chat assistants on long-term "
+    "interactive memory. <i>ICLR</i>, 2025.",
+    "[6] Chhikara, P., et al. Mem0: Building production-ready AI agents with "
+    "scalable long-term memory. <i>arXiv:2504.19413</i>, 2025.",
+    "[7] Parisi, G. I., et al. Continual lifelong learning with neural networks: "
+    "A review. <i>Neural Networks</i>, 113:54&ndash;71, 2019.",
+    "[8] Reimers, N., &amp; Gurevych, I. Sentence-BERT: Sentence embeddings using "
+    "Siamese BERT-networks. <i>EMNLP</i>, 2019.",
+]
 
 
 def make_table(data, col_widths=None, highlight_col=None):
@@ -113,46 +182,56 @@ def build():
     # ── header ────────────────────────────────────────────────────────────
     story += [
         P("Volatility-Adjusted Memory Protection", TITLE),
-        P("From a synthetic win to a validated control knob — with negative "
-          "controls", SUB),
-        P("Richard · 2026 · Revised draft (v2)", SUB),
-        P("This revision supersedes the original 3-page portfolio note "
-          "(archived as volatility_ewc_portfolio_v1_original.pdf). It reconciles "
-          "the write-up with the Split-MNIST, capacity, library, and multi-turn "
-          "results and their negative controls. Source: paper/build_paper.py; "
-          "companion: paper/findings.md.", NOTE),
+        P("A causal control knob for continual learning and LLM agent memory",
+          SUB),
+        P("Richard Emate", SUB),
+        P("richard@theemate.com &middot; Independent &middot; 2026", SUB),
     ]
 
-    # ── TL;DR ─────────────────────────────────────────────────────────────
-    story += [P(
-        "<b>TL;DR</b> — Standard continual-learning methods (EWC) protect all "
-        "past knowledge with one fixed strength, forcing a tradeoff between "
-        "remembering old tasks and adapting to new ones. I scale protection by "
-        "how volatile each task's domain actually is — measured <i>before</i> any "
-        "protection is applied. On a synthetic benchmark this improved both axes "
-        "at once (+2.7pp stable retention, +5.2pp volatile adaptation). On real "
-        "data (Split-MNIST) the honest result is subtler: it is <i>not</i> a "
-        "free-lunch Pareto win but a validated <b>control knob</b> that causally "
-        "steers the stability-plasticity tradeoff — confirmed by a negative "
-        "control (shuffling or inverting the domain&rarr;volatility map removes "
-        "or reverses the effect). The same principle drives a working LLM-memory "
-        "library whose behaviour is likewise volatility-driven under control.",
-        TLDR)]
+    # ── Abstract (synced with paper/ARXIV_SUBMISSION.md) ──────────────────
+    story += [P("Abstract", ABSTRACT_LABEL)]
+    story += [P(ABSTRACT, ABSTRACT_STYLE)]
     story += [Spacer(1, 6)]
 
-    # ── 1. Problem ────────────────────────────────────────────────────────
-    story += [P("1. The Problem", H1)]
+    # ── 1. Introduction ───────────────────────────────────────────────────
+    story += [P("1. Introduction", H1)]
     story += [P(
-        "Continual-learning systems face the <i>stability-plasticity dilemma</i>: "
-        "protect old knowledge too strongly and the model cannot adapt; too "
-        "weakly and it forgets. Elastic Weight Consolidation (EWC) penalises "
-        "changes to parameters in proportion to their past importance (Fisher "
-        "information). EWC works, but applies one global protection strength "
-        "uniformly — every past task is guarded equally regardless of whether its "
-        "domain is still relevant. Not all knowledge ages the same way: core "
-        "language structure barely shifts; a user's current preferences might "
-        "change monthly. Treating both equally wastes protection budget on "
-        "memories going stale and starves memories that actually deserve to last.")]
+        "Continual-learning systems and LLM agent memory layers both face the "
+        "<i>stability&ndash;plasticity dilemma</i>: protect old knowledge too "
+        "strongly and the system cannot adapt; too weakly and it forgets or goes "
+        "stale. Elastic Weight Consolidation (EWC)&nbsp;[1] penalises parameter "
+        "changes in proportion to Fisher information, but applies one global "
+        "protection strength uniformly. Agent memory systems such as Mem0&nbsp;[6] "
+        "similarly store relevant facts without modelling how fast different kinds "
+        "of knowledge age. Not all knowledge changes at the same rate: biographical "
+        "facts are stable; mood, location, and current tasks are volatile.")]
+    story += [P("This work makes three contributions:")]
+    story += bullets([
+        "<b>Per-domain volatility scaling</b> of memory protection and retrieval "
+        "freshness, with volatility measured <i>before</i> any update to avoid "
+        "circularity.",
+        "<b>Sabotage negative controls</b> (REAL &gt; SHUFFLE &gt; SWAP) that gate "
+        "every non-synthetic empirical claim.",
+        "<b>VoltMem</b>, an open-source Python memory library validating the same "
+        "principle on agent write policy, retrieval ranking, and scripted "
+        "comparisons against Mem0&nbsp;[6] and LongMemEval&nbsp;[5].",
+    ])
+    story += [P("Section&nbsp;2 states the hypothesis and core equations. "
+                "Section&nbsp;3 describes benchmarks and controls. "
+                "Section&nbsp;4 records discarded early wins. "
+                "Section&nbsp;5 reports results. Section&nbsp;6 lists limitations.")]
+
+    story += [P("Related work", H2)]
+    story += [P(
+        "Continual learning methods range from regularisation (EWC&nbsp;[1], "
+        "synaptic intelligence&nbsp;[3]) to replay and constrained optimisation "
+        "(GEM&nbsp;[2], progress &amp; compress&nbsp;[4]). Surveys&nbsp;[7] frame "
+        "the stability&ndash;plasticity tradeoff as the central challenge. "
+        "LongMemEval&nbsp;[5] benchmarks long-horizon memory retrieval in chat "
+        "assistants; Mem0&nbsp;[6] targets production agent memory with vector "
+        "storage and consolidation. VoltMem differs by assigning explicit "
+        "volatility priors per domain and validating behaviour under inverted "
+        "controls, rather than claiming uniform benchmark dominance.")]
 
     # ── 2. Hypothesis ─────────────────────────────────────────────────────
     story += [P("2. Hypothesis", H1)]
@@ -161,7 +240,18 @@ def build():
         "actually is, measured before any protection is applied. High measured "
         "volatility &rarr; weak protection; low volatility &rarr; strong "
         "protection.")]
-    story += [P("w_d = 1 / V_d ^ &gamma;", FORMULA)]
+    story += [F("Protection weight", block=True)]
+    story += [F("w<sub>d</sub> = 1 / V<sub>d</sub><sup>&gamma;</sup>")]
+    story += [P(
+        "The same volatility prior drives the open-source VoltMem memory layer. "
+        "Write path: an escalation score versus a volatility-scaled threshold; "
+        "retrieve path: down-rank stale volatile chunks.")]
+    story += [F("Escalation score and threshold", block=True)]
+    story += [F("E<sub>t</sub> = [(M<sub>t</sub> &middot; R<sub>t</sub>) / C<sup>&alpha;</sup>] &middot; V<sub>d</sub> &middot; G<sub>t</sub>")]
+    story += [F("&theta;<sub>t</sub> = &theta;<sub>0</sub> &middot; (1 / V<sub>d</sub>) &middot; L<sub>t</sub> &nbsp;&nbsp;&nbsp; (audit iff E<sub>t</sub> &gt; &theta;<sub>t</sub>)")]
+    story += [F("Retrieval freshness", block=True)]
+    story += [F("staleness = 1 &minus; exp(&minus;V<sub>d</sub> &middot; age<sub>days</sub>)")]
+    story += [F("score = similarity &middot; (1 &minus; V<sub>d</sub> &middot; staleness)")]
     story += [P(
         "The original prediction was that this improves both retention and "
         "adaptability <i>simultaneously</i>. That turned out to be true only in a "
@@ -193,9 +283,9 @@ def build():
         "Before any gradient step on a new task, measure the model's loss using "
         "only knowledge from prior tasks — a clean mismatch signal uncorrupted by "
         "the EWC penalty — and track a running EMA per domain. Each stored task's "
-        "EWC penalty is then weighted by w_d above: high V_d &rarr; small w_d "
-        "&rarr; weak protection; low V_d &rarr; large w_d &rarr; strong "
-        "protection.")]
+        "EWC penalty is then weighted by w<sub>d</sub> above: high V<sub>d</sub> "
+        "&rarr; small w<sub>d</sub> &rarr; weak protection; low V<sub>d</sub> "
+        "&rarr; large w<sub>d</sub> &rarr; strong protection.")]
     story += [P("Negative control (the load-bearing part)", H2)]
     story += [P(
         "Every non-synthetic claim is gated on a <b>sabotage / negative "
@@ -292,9 +382,11 @@ def build():
     story += [P("5.5  Reliability-weighted volatility EMA", H2)]
     story += [P(
         "A multi-turn robustness fix: the volatility EMA's learning rate is scaled "
-        "by source reliability, so &alpha; = (1 &minus; &beta;)&middot;clamp(R_t, "
-        "0, 1) and V &larr; (1 &minus; &alpha;)V + &alpha;M_t. A low-trust "
-        "observation moves a stable memory <b>2.5&times; less</b> than the prior "
+        "by source reliability:")]
+    story += [F("&alpha; = (1 &minus; &beta;) &middot; clamp(R<sub>t</sub>, 0, 1)")]
+    story += [F("V &larr; (1 &minus; &alpha;) &middot; V + &alpha; &middot; M<sub>t</sub>")]
+    story += [P(
+        "A low-trust observation moves a stable memory <b>2.5&times; less</b> than the prior "
         "logic; reliable-source updates are unchanged (backward compatible). A "
         "sustained weak stream crosses V &ge; 0.5 at turn 8 versus the old logic's "
         "turn 2, and stable content is never wrongly overwritten. (Also fixed: "
@@ -347,8 +439,11 @@ def build():
         ["preference change", "1 fact, correct top", "2 facts, stale top"],
         ["location change", "1 fact, correct top", "2 facts, stale top"],
     ], col_widths=[50 * mm, 50 * mm, 50 * mm], highlight_col=1)]
-    story += [P("Scripted case study (3/3 current-truth wins), not a public-benchmark "
-                "SOTA claim. Linking quality depends on the embedding backend.", CAP)]
+    story += [P(
+        "Scripted case study (3/3 current-truth wins) vs Mem0&nbsp;[6] "
+        "(open-source, gpt-4o-mini, text-embedding-3-small); not a "
+        "public-benchmark SOTA claim. Embeddings: MiniLM&nbsp;[8].",
+        CAP)]
 
     story += [P("5.8  Retrieval haystack &amp; LongMemEval-S", H2)]
     story += [P(
@@ -363,10 +458,30 @@ def build():
     ], col_widths=[38 * mm, 24 * mm, 24 * mm, 24 * mm, 30 * mm], highlight_col=1)]
     story += [P(
         "PASS: real avoids stale volatile traps (0% stale@1 vs 20% cosine), finds "
-        "current in top-5 more often (100% vs 80%), separation real &gt; swap. "
-        "On LongMemEval-S (n=60, chunk-calibrated ingest), answer@5 is 0.700 (real) "
-        "tying cosine; flat 0.717 leads slightly; swap 0.667 &lt; real. "
-        "Preference type recovers to 0.700 (was 0.300 with heuristic domains).",
+        "current in top-5 more often (100% vs 80%), separation real &gt; swap.",
+        CAP)]
+    story += [P("LongMemEval-S (n=60, chunk-calibrated ingest: user &rarr; "
+                "<i>stated_preference</i>, assistant &rarr; <i>opinion</i>):", BODY)]
+    story += [make_table([
+        ["system", "answer@5", "evidence@5"],
+        ["voltmem_flat", "0.717", "0.850"],
+        ["voltmem_real", "0.700", "0.833"],
+        ["similarity_only", "0.700", "0.850"],
+        ["voltmem_swap", "0.667", "0.817"],
+    ], col_widths=[42 * mm, 32 * mm, 32 * mm], highlight_col=2)]
+    story += [make_table([
+        ["question type", "real", "flat", "swap", "cosine"],
+        ["single-session-preference", "0.700", "0.700", "0.600", "0.700"],
+        ["single-session-assistant", "0.900", "0.900", "0.900", "0.900"],
+        ["single-session-user", "0.800", "0.900", "0.700", "0.900"],
+        ["knowledge-update", "0.600", "0.600", "0.500", "0.600"],
+        ["temporal-reasoning", "0.600", "0.600", "0.700", "0.600"],
+        ["multi-session", "0.600", "0.600", "0.600", "0.500"],
+    ], col_widths=[44 * mm, 22 * mm, 22 * mm, 22 * mm, 24 * mm], highlight_col=1)]
+    story += [P(
+        "Real ties cosine overall (70.0%); flat leads slightly (71.7%); swap "
+        "(66.7%) &lt; real. Preference type recovers to 0.700 (was 0.300 with "
+        "heuristic per-turn domains). Not a public-benchmark SOTA claim.",
         CAP)]
 
     # ── 6. Caveats ────────────────────────────────────────────────────────
@@ -385,34 +500,40 @@ def build():
         "<b>Embedding backend variance.</b> Linking thresholds are calibrated for "
         "sentence-transformers (MiniLM); production should pin or calibrate per "
         "backend.",
-        "<b>LongMemEval overall.</b> At n=30, answer@5 does not beat plain cosine; "
-        "report per-type causal signals honestly.",
+        "<b>LongMemEval overall.</b> At n=60 (chunk-calibrated ingest), real ties "
+        "cosine (70.0%); flat leads (71.7%); swap (66.7%) &lt; real.",
         "<b>Manual partitioning.</b> Automatic volatility detection from "
         "gradient-conflict signals remains open work.",
         "<b>Vector index (v0.2).</b> SQLite ANN accelerates candidate retrieval; "
         "volatility re-rank is unchanged (engineering, not a separate claim).",
-        "<b>No replay-baseline comparison</b> yet (GEM, A-GEM, Synaptic "
-        "Intelligence) — volatility-weighting may be additive or redundant.",
+        "<b>No replay-baseline comparison</b> yet (GEM&nbsp;[2], A-GEM, synaptic "
+        "intelligence&nbsp;[3]) — volatility-weighting may be additive or redundant.",
     ])
 
-    # ── 7. Portfolio note ─────────────────────────────────────────────────
-    story += [P("7. Why This Is on My Portfolio", H1)]
+    # ── 7. Conclusion ─────────────────────────────────────────────────────
+    story += [P("7. Conclusion", H1)]
     story += [P(
-        "This started as a philosophical question — when should a person trust an "
-        "old habit vs. question it — that turned out to have a direct mechanistic "
-        "analogue in a real ML problem. The path from idea to equations to "
-        "working code to null result to diagnosed bug to real result — and then "
-        "to <i>discarding my own apparent wins when they failed a negative "
-        "control</i> — is most of what applied ML engineering is day-to-day. "
-        "Arriving, as a self-taught engineer, at a result that maps onto a "
-        "genuine open problem in continual-learning research, and being disciplined "
-        "enough to state precisely what it is and is not, is the actual thing this "
-        "piece demonstrates.")]
+        "Volatility-adjusted memory protection is a validated <b>control knob</b> "
+        "on the stability&ndash;plasticity tradeoff, not a free-lunch accuracy "
+        "method. Negative controls (REAL &gt; SHUFFLE &gt; SWAP) separate genuine "
+        "volatility-driven behaviour from generic non-uniform regularisation. The "
+        "same principle transfers to LLM agent memory in VoltMem: selective "
+        "updates, freshness-aware retrieval, and current-truth behaviour in "
+        "scripted scenarios where uniform memory layers retain stale facts.")]
+    story += [P(
+        "Future work: prior-anchored volatility estimates, automatic domain "
+        "discovery from gradient conflict, replay baselines, and larger-scale "
+        "continual-learning benchmarks. Code, reproduction scripts, and extended "
+        "tables: github.com/Rouche01/voltmem.")]
+
+    # ── References ────────────────────────────────────────────────────────
+    story += [P("References", H1)]
+    story += refs(REFERENCES)
+
     story += [hr()]
     story += [P(
         "Code: <b>github.com/Rouche01/voltmem</b> &middot; "
-        "Package: <b>pypi.org/project/voltmem</b> (v0.2.0) &middot; "
-        "Reproduction: paper/findings.md, docs/RESEARCH.md",
+        "Package: <b>pypi.org/project/voltmem</b> (v0.2.0)",
         CAP)]
 
     doc = SimpleDocTemplate(
@@ -420,7 +541,7 @@ def build():
         leftMargin=22 * mm, rightMargin=22 * mm,
         topMargin=20 * mm, bottomMargin=20 * mm,
         title="Volatility-Adjusted Memory Protection",
-        author="Richard",
+        author="Richard Emate",
     )
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     print(f"wrote {OUT}")

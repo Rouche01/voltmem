@@ -1,6 +1,6 @@
 # VoltMem
 
-[![PyPI](https://img.shields.io/pypi/v/voltmem)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
