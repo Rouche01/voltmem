@@ -35,7 +35,16 @@ Quick start:
 
 from .memory import MemoryLayer, WriteResult, RetrieveResult
 from .client import Memory, create_memory
-from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY
+from .domains import MemoryItem, DOMAIN_VOLATILITY, SOURCE_RELIABILITY, DomainRegistry
+from .classifiers import (
+    Classifier,
+    HeuristicClassifier,
+    LLMClassifier,
+    KeywordClassifier,
+    ChainedClassifier,
+    CallableClassifier,
+    resolve_classifier,
+)
 from .vector_index import (
     VectorIndex,
     BruteForceVectorIndex,
@@ -60,6 +69,14 @@ __all__ = [
     "MemoryItem",
     "DOMAIN_VOLATILITY",
     "SOURCE_RELIABILITY",
+    "DomainRegistry",
+    "Classifier",
+    "HeuristicClassifier",
+    "LLMClassifier",
+    "KeywordClassifier",
+    "ChainedClassifier",
+    "CallableClassifier",
+    "resolve_classifier",
     "EmbeddingSimilarity",
     "VectorIndex",
     "BruteForceVectorIndex",

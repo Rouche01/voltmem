@@ -10,7 +10,7 @@ These are defaults; callers can override per-item or register custom domains.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Iterable, Optional
 
 # ── built-in domain priors ────────────────────────────────────────────────────
 
@@ -65,6 +65,67 @@ SOURCE_RELIABILITY: dict[str, float] = {
     "weak_inference":       0.4,    # loosely inferred from behaviour
     "system_generated":     0.3,    # injected by the wrapping system
 }
+
+
+class DomainRegistry:
+    """Register custom domains with volatility priors and slot/linking rules.
+
+    Pass to ``create_memory(domains=...)``. Patches module-level domain maps for
+    the lifetime of the returned ``Memory`` (restored on ``close()``).
+    """
+
+    def __init__(self) -> None:
+        self._volatility: dict[str, float] = {}
+        self._slot_domains: set[str] = set()
+        self._siblings: dict[str, frozenset[str]] = {}
+
+    def register(
+        self,
+        name: str,
+        volatility: float,
+        *,
+        slot: bool = False,
+        siblings: Iterable[str] | None = None,
+    ) -> "DomainRegistry":
+        """Add or override a domain. Volatility in [0, 1] — higher = faster-changing."""
+        if not 0.0 <= volatility <= 1.0:
+            raise ValueError(f"volatility must be in [0, 1], got {volatility}")
+        self._volatility[name] = volatility
+        if slot:
+            self._slot_domains.add(name)
+        if siblings is not None:
+            self._siblings[name] = frozenset({name, *siblings})
+        return self
+
+    def known_domains(self) -> frozenset[str]:
+        return frozenset({*DOMAIN_VOLATILITY.keys(), *self._volatility.keys()})
+
+    def volatility(self, domain: str) -> float:
+        if domain in self._volatility:
+            return self._volatility[domain]
+        return DOMAIN_VOLATILITY.get(domain, 0.5)
+
+    def install(self) -> Callable[[], None]:
+        """Merge registered domains into module-level maps. Returns a restore fn."""
+        import voltmem.domains as dom
+
+        saved_volatility = dict(dom.DOMAIN_VOLATILITY)
+        saved_slots = dom.SLOT_DOMAINS
+        saved_siblings = dict(dom.DOMAIN_SIBLINGS)
+
+        dom.DOMAIN_VOLATILITY.update(self._volatility)
+        dom.SLOT_DOMAINS = frozenset(set(dom.SLOT_DOMAINS) | self._slot_domains)
+        for name, group in self._siblings.items():
+            dom.DOMAIN_SIBLINGS[name] = group
+
+        def restore() -> None:
+            dom.DOMAIN_VOLATILITY.clear()
+            dom.DOMAIN_VOLATILITY.update(saved_volatility)
+            dom.SLOT_DOMAINS = saved_slots
+            dom.DOMAIN_SIBLINGS.clear()
+            dom.DOMAIN_SIBLINGS.update(saved_siblings)
+
+        return restore
 
 
 @dataclass

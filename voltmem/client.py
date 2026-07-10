@@ -7,12 +7,46 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
+from .classifiers import (
+    Classifier,
+    ClassifierInput,
+    resolve_classifier,
+)
+from .domains import DomainRegistry
 from .embeddings import EmbeddingSimilarity
-from .extract import HeuristicFactExtractor, LLMFactExtractor
+from .extract import (
+    FactExtractor,
+    HeuristicFactExtractor,
+    LLMFactExtractor,
+)
 from .memory import MemoryLayer, RetrieveResult, WriteResult
 
 Message = dict[str, str]
 AddInput = Union[str, Message, list[Message]]
+FactExtractorInput = str | FactExtractor
+
+
+def resolve_fact_extractor(
+    fact_extractor: FactExtractorInput | None,
+    *,
+    llm_extract: bool = False,
+    classifier: Classifier | None = None,
+    ollama_url: str = "http://localhost:11434",
+    llm_model: str = "qwen2.5-coder:14b",
+) -> FactExtractor:
+    if fact_extractor is not None and not isinstance(fact_extractor, str):
+        return fact_extractor
+
+    name = fact_extractor
+    if name is None and llm_extract:
+        name = "llm"
+    if name is None or name == "heuristic":
+        return HeuristicFactExtractor(classifier)  # type: ignore[arg-type]
+    if name in ("llm", "ollama"):
+        return LLMFactExtractor(model=llm_model, ollama_url=ollama_url)
+    raise ValueError(
+        f"unknown fact_extractor {name!r}; use 'heuristic', 'llm', or a FactExtractor instance"
+    )
 
 
 def create_memory(
@@ -21,9 +55,14 @@ def create_memory(
     *,
     embeddings: bool = True,
     verbose: bool = False,
+    classifier: ClassifierInput | None = "heuristic",
+    fact_extractor: FactExtractorInput | None = "heuristic",
+    domains: DomainRegistry | None = None,
     llm_extract: bool = False,
     llm_domain: bool = False,
     vector_index: str = "auto",
+    ollama_url: str = "http://localhost:11434",
+    llm_model: str = "qwen2.5-coder:14b",
     **kwargs: Any,
 ) -> "Memory":
     """Create a production-ready memory instance with sensible defaults.
@@ -33,36 +72,65 @@ def create_memory(
 
     Parameters
     ----------
+    classifier : str, Classifier, or dict
+        ``"heuristic"`` (default), ``"llm"``, a :class:`~voltmem.classifiers.Classifier`
+        instance, or a dict with ``classify`` / ``mismatch`` callables.
+    fact_extractor : str or FactExtractor
+        ``"heuristic"`` (default) or ``"llm"`` for message-list fact splitting.
+    domains : DomainRegistry, optional
+        Custom domain volatility priors (restored when the memory is closed).
     vector_index : str
         ``auto`` (sqlite index when embedder present), ``sqlite``, ``brute``,
         or ``off`` for full-scan retrieval.
     llm_extract : bool
-        Use Ollama to extract atomic facts from conversation message lists.
+        Deprecated — use ``fact_extractor="llm"``.
     llm_domain : bool
-        Use Ollama for domain classification and contradiction detection
-        inside ``remember()`` (passed to ``MemoryLayer`` as ``extractor``).
+        Deprecated — use ``classifier="llm"``.
     """
     similarity_fn = kwargs.pop("similarity_fn", None)
     if embeddings and similarity_fn is None:
         similarity_fn = EmbeddingSimilarity(verbose=verbose)
 
     embed_fn = getattr(similarity_fn, "embed", None)
+    relate_threshold = float(kwargs.pop("relate_threshold", 0.55))
 
-    fact_extractor = LLMFactExtractor() if llm_extract else HeuristicFactExtractor()
+    # ``extractor=`` remains supported for backward compatibility.
+    legacy_extractor = kwargs.pop("extractor", None)
+    if legacy_extractor is not None and classifier == "heuristic":
+        resolved_classifier = legacy_extractor
+    else:
+        resolved_classifier = resolve_classifier(
+            classifier,
+            llm_domain=llm_domain,
+            relate_threshold=relate_threshold,
+            ollama_url=ollama_url,
+            llm_model=llm_model,
+        )
+
+    resolved_fact_extractor = resolve_fact_extractor(
+        fact_extractor,
+        llm_extract=llm_extract,
+        classifier=resolved_classifier,
+        ollama_url=ollama_url,
+        llm_model=llm_model,
+    )
+
+    domain_restore: Callable[[], None] | None = None
+    if domains is not None:
+        domain_restore = domains.install()
 
     layer_kwargs = dict(kwargs)
-    if llm_domain:
-        from .extract import LLMExtractor
-        layer_kwargs["extractor"] = LLMExtractor()
-
+    layer_kwargs["extractor"] = resolved_classifier
     layer_kwargs.setdefault("vector_index", vector_index)
     layer_kwargs.setdefault("embed_fn", embed_fn)
+    layer_kwargs.setdefault("relate_threshold", relate_threshold)
 
     return Memory(
         user_id=user_id,
         db_path=db_path,
         similarity_fn=similarity_fn,
-        fact_extractor=fact_extractor,
+        fact_extractor=resolved_fact_extractor,
+        domain_restore=domain_restore,
         **layer_kwargs,
     )
 
@@ -83,10 +151,12 @@ class Memory:
         layer: Optional[MemoryLayer] = None,
         similarity_fn: Optional[Callable[[str, str], float]] = None,
         fact_extractor: Optional[HeuristicFactExtractor] = None,
+        domain_restore: Callable[[], None] | None = None,
         **kwargs: Any,
     ):
         self.user_id = user_id
         self._fact_extractor = fact_extractor or HeuristicFactExtractor()
+        self._domain_restore = domain_restore
         if layer is not None:
             self._layer = (
                 layer if layer.namespace == user_id else layer.for_user(user_id)
@@ -182,6 +252,9 @@ class Memory:
     def close(self) -> None:
         if self._owns_layer:
             self._layer.close()
+        if self._domain_restore is not None:
+            self._domain_restore()
+            self._domain_restore = None
 
     def __enter__(self) -> "Memory":
         return self

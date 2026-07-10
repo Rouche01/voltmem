@@ -115,7 +115,10 @@ class LLMExtractor:
         self.model = model
         self.url = ollama_url.rstrip("/") + "/api/generate"
         self.fallback = fallback or HeuristicExtractor()
-        self._domains = list(DOMAIN_VOLATILITY.keys())
+
+    @property
+    def _domains(self) -> list[str]:
+        return list(DOMAIN_VOLATILITY.keys())
 
     def _generate(self, prompt: str) -> str:
         payload = json.dumps({
@@ -184,8 +187,11 @@ def _split_user_sentences(text: str) -> list[str]:
 class HeuristicFactExtractor:
     """Dependency-free: one fact per user sentence in the message list."""
 
+    def __init__(self, classifier: HeuristicExtractor | None = None) -> None:
+        self._classifier = classifier or HeuristicExtractor()
+
     def extract(self, messages: list[dict[str, str]]) -> list[ExtractedFact]:
-        domain_fn = HeuristicExtractor().classify_domain
+        domain_fn = self._classifier.classify_domain
         facts: list[ExtractedFact] = []
         for msg in messages:
             if msg.get("role", "user") != "user":
@@ -213,7 +219,10 @@ class LLMFactExtractor:
         self.model = model
         self.url = ollama_url.rstrip("/") + "/api/generate"
         self.fallback = fallback or HeuristicFactExtractor()
-        self._domains = list(DOMAIN_VOLATILITY.keys())
+
+    @property
+    def _domains(self) -> list[str]:
+        return list(DOMAIN_VOLATILITY.keys())
 
     def _generate(self, prompt: str) -> str:
         payload = json.dumps({

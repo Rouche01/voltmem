@@ -198,6 +198,7 @@ bob   = create_memory("app.db", user_id="bob")
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |
 | `examples/chat_app/` | Memory-aware CLI chat (extendable to web UI) |
+| `examples/custom_classifier.py` | Pluggable ``KeywordClassifier`` + ``DomainRegistry`` |
 
 ### Chat app (CLI)
 
@@ -223,7 +224,32 @@ Slash commands: `/memories`, `/search <query>`, `/clear`, `/reset`, `/help`.
 | `emotional_context` | 0.80 | Fast-moving |
 | `current_task` | 0.90 | Minimal protection |
 
-Custom domains: `voltmem/domains.py`.
+Custom domains: register via ``DomainRegistry`` and pass to ``create_memory(domains=...)``.
+Pluggable classifiers: ``create_memory(classifier=...)`` — ``"heuristic"``, ``"llm"``, ``KeywordClassifier``, or a callable dict.
+
+```python
+from voltmem import create_memory, DomainRegistry, KeywordClassifier, ChainedClassifier, HeuristicClassifier
+
+domains = DomainRegistry()
+domains.register("style_preference", 0.08)
+domains.register("style_constraint", 0.25)
+
+mem = create_memory(
+    "app.db",
+    user_id="alice",
+    domains=domains,
+    classifier=ChainedClassifier([
+        KeywordClassifier({
+            "style_preference": ["prefer", "darker colors", "minimal"],
+            "style_constraint": ["no wool", "tight budget"],
+        }),
+        HeuristicClassifier(),
+    ]),
+)
+
+mem.add("I prefer darker colors and minimal fits")
+hits = mem.search("what colors does the user like?")
+```
 
 ---
 

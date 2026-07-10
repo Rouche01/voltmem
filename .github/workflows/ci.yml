@@ -31,6 +31,12 @@ jobs:
       - name: Run vector index tests
         run: python tests/test_vector_index.py
 
+      - name: Run classifier tests
+        run: python tests/test_classifiers.py
+
+      - name: Custom classifier demo smoke test
+        run: python examples/custom_classifier.py
+
       - name: Chat app demo smoke test
         run: python -m examples.chat_app --demo --echo
 

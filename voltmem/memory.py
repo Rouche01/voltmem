@@ -35,10 +35,10 @@ from typing import Callable, Optional, Union
 from .domains import (
     MemoryItem,
     DOMAIN_VOLATILITY,
-    SLOT_DOMAINS,
     DOMAIN_SIBLINGS,
     SLOT_LINK_FLOOR,
 )
+from . import domains as _domains
 from .vector_index import VectorIndex, create_vector_index
 from .extract import HeuristicExtractor
 from .store import MemoryStore
@@ -598,7 +598,7 @@ class MemoryLayer:
         sim = self._similarity_fn(content, candidate.content)
         threshold = self._slot_relate_threshold(domain)
 
-        if len(items) > 1 and domain not in SLOT_DOMAINS:
+        if len(items) > 1 and domain not in _domains.SLOT_DOMAINS:
             threshold = max(threshold, self.relate_threshold - 0.05)
             ranked = sorted(
                 (self._similarity_fn(content, it.content) for it in items),
@@ -610,7 +610,7 @@ class MemoryLayer:
         if sim >= threshold:
             return candidate, sim
 
-        if domain in SLOT_DOMAINS and len(items) == 1 and sim >= SLOT_LINK_FLOOR:
+        if domain in _domains.SLOT_DOMAINS and len(items) == 1 and sim >= SLOT_LINK_FLOOR:
             return candidate, sim
 
         return None, sim
