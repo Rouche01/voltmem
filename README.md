@@ -197,6 +197,18 @@ bob   = create_memory("app.db", user_id="bob")
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |
+| `examples/chat_app/` | Memory-aware CLI chat (extendable to web UI) |
+
+### Chat app (CLI)
+
+```bash
+pip install -e ".[embeddings]"
+python -m examples.chat_app              # REPL; uses Ollama if running, else echo mode
+python -m examples.chat_app --demo       # scripted smoke test
+python -m examples.chat_app --show-recall
+```
+
+Slash commands: `/memories`, `/search <query>`, `/clear`, `/reset`, `/help`.
 
 ---
 

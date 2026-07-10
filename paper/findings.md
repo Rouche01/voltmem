@@ -201,6 +201,84 @@ folding the observation into the EMA (`voltmem/memory.py`). This strengthened th
 robust, defensible claims are the qualitative tradeoff-escape (VoltMem best on
 *balanced*) and the causal ordering, not the exact accuracy numbers.
 
+### Claim 7 — Slot-aware linking routes paraphrased updates to the volatility engine
+
+Source: `voltmem/memory.py` (`remember()` slot fallback); `tests/test_voltmem.py`
+(slot linking tests); `experiments/mem0_side_by_side.py` (application case study).
+
+Embedding-based `remember()` must decide whether a new statement refers to an
+existing memory before `observe()` can apply the escalation rule. A single global
+similarity threshold fails on paraphrases (e.g. mood and preference rephrasings
+score 0.44–0.53 on MiniLM while unrelated facts stay lower). **Slot-aware linking**
+adds a domain-scoped fallback: volatile singleton slots (mood, location, task) and
+preference sibling domains (`core_preference` ↔ `stated_preference`) link at a
+volatility-scaled lower threshold; multi-fact domains require a clear best match.
+
+On three scripted scenarios vs real Mem0 (open-source, `gpt-4o-mini`), VoltMem
+wins **3/3** on current-truth retrieval (1 fact stored, correct top answer) while
+Mem0 keeps contradictory pairs (2 facts, stale top answer on 2/3). This is a
+**wedge case study**, not a public-benchmark SOTA claim.
+
+**Limit:** linking quality still depends on the embedding backend; the volatility
+engine only runs when the write path successfully associates a turn with an
+existing slot. Tier-3 retrieval safety nets (recency tie-break when linking fails)
+remain future work.
+
+### Claim 8 — Freshness-aware retrieval beats cosine-only on a noisy haystack
+
+Source: `experiments/retrieval_haystack_bench.py` (re-run post v0.2 vector index;
+index does not change scores — parity tests in `tests/test_vector_index.py`).
+
+Five slots × 20 runs, 6 stale volatile decoys + 3 distractors per slot, top-5:
+
+| system | current@1 | current@5 | stale@1 | separation |
+|---|---|---|---|---|
+| **voltmem_real** | 0.600 | **1.000** | **0.000** | **0.153** |
+| voltmem_flat | 0.800 | 1.000 | 0.200 | 0.133 |
+| voltmem_swap | 0.650 | 1.000 | 0.200 | 0.111 |
+| similarity_only | 0.600 | 0.800 | 0.200 | −0.003 |
+
+**PASS:** voltmem_real avoids stale volatile traps (stale@1 0% vs 20%), finds the
+current fact in top-5 more often (100% vs 80%), and separates current from stale
+decoys (sep 0.153 > swap 0.111). Causal ordering real > swap on separation holds.
+
+**Limit:** haystack is synthetic with hand-picked domain priors; current@1 is not
+above flat (0.600 vs 0.800) — the win is on **staleness resistance**, not raw
+top-1 semantic hit rate.
+
+### Claim 9 — LongMemEval-S scaled (n=60) — chunk-calibrated retrieval
+
+Source: `experiments/longmemeval.py --split s --per-type 10` (2026-07-10;
+sentence-transformers `all-MiniLM-L6-v2`). Ingest uses a **chunk domain profile**
+(user → `stated_preference`, assistant → `opinion`) instead of per-turn
+`HeuristicExtractor` labels that treated chat logs as eternal traits.
+
+| system | answer@5 | evidence@5 |
+|---|---|---|
+| voltmem_flat | **0.717** | **0.850** |
+| voltmem_real | **0.700** | 0.833 |
+| similarity_only | **0.700** | **0.850** |
+| voltmem_swap | 0.667 | 0.817 |
+
+By question type (answer hit rate):
+
+| type | real | flat | swap | similarity |
+|---|---|---|---|---|
+| single-session-preference | **0.700** | 0.700 | 0.600 | 0.700 |
+| single-session-assistant | **0.900** | 0.900 | 0.900 | 0.900 |
+| single-session-user | 0.800 | 0.900 | 0.700 | 0.900 |
+| knowledge-update | 0.600 | 0.600 | 0.500 | 0.600 |
+| temporal-reasoning | 0.600 | 0.600 | 0.700 | 0.600 |
+| multi-session | 0.600 | 0.600 | 0.600 | 0.500 |
+
+**Honest read:** after chunk calibration, real **ties cosine** (0.700) and recovers
+preference types (0.300 → 0.700 pre-fix). Flat still leads slightly (0.717); swap
+(0.667) < real. Do **not** claim LongMemEval SOTA; report as retrieval-layer
+validation with documented ingestion profile.
+
+**Pre-calibration baseline** (heuristic domains): real 0.617, preference 0.300 —
+mislabeled stable domains let old haystack noise rank too high under real priors.
+
 ---
 
 ## 5. Consolidated limitations and next steps
@@ -211,13 +289,19 @@ robust, defensible claims are the qualitative tradeoff-escape (VoltMem best on
   shared trunk; benefits are strongest in under-protected large models.
 - **Small-scale benchmarks only.** Validated on 2D blobs and Split-MNIST;
   Split-CIFAR / larger nets / longer task streams are pending.
+- **LongMemEval-S** at n=60: real **0.700** ties cosine after chunk domain
+  calibration (user → `stated_preference`, assistant → `opinion`); flat **0.717**
+  still leads slightly; swap **0.667** < real. Preference type recovered
+  0.300 → 0.700 (pre-calibration heuristic ingest).
 - **EMA fixed-point drift.** Reliability weighting slows erosion but does not
   anchor the estimate to the domain prior. Next step: a prior-anchored update that
   relaxes only as *reliable* evidence accumulates.
-- **Keyword-based retrieval.** `memory._similarity()` uses word overlap; swap for
-  cosine similarity over embeddings in production.
+- **Embedding backend variance.** Linking thresholds are calibrated for
+  `sentence-transformers` (MiniLM); production should pin or calibrate per backend.
 - **Manual domain partitioning.** Automatic volatility detection from gradient-
   conflict signals is the main open research direction.
+- **Vector index is acceleration, not a claim.** v0.2 adds SQLite ANN candidates
+  with volatility re-rank unchanged (`vector_index="auto"`).
 - **No replay-baseline comparison** yet (GEM, A-GEM, experience replay).
 
 ---
@@ -243,6 +327,18 @@ robust, defensible claims are the qualitative tradeoff-escape (VoltMem best on
 
 # short readable demo transcript (VoltMem 3/3 vs naive policies)
 .venv/bin/python experiments/memory_demo.py
+
+# retrieval haystack (freshness vs cosine-only)
+.venv/bin/python experiments/retrieval_haystack_bench.py
+
+# slot linking + real Mem0 wedge (product case study)
+.venv/bin/python experiments/mem0_side_by_side.py
+
+# public benchmark (LongMemEval-S)
+.venv/bin/python experiments/longmemeval.py --split s --per-type 10
+
+# vector index parity tests
+.venv/bin/python tests/test_vector_index.py
 
 # unit tests
 PYTHONPATH=. .venv/bin/python tests/test_voltmem.py

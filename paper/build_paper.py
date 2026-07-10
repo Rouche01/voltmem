@@ -332,6 +332,43 @@ def build():
                 "against the volatility known <i>before</i> the observation, then "
                 "learning from it.", CAP)]
 
+    story += [P("5.7  Slot-aware linking &mdash; write-path wedge vs Mem0", H2)]
+    story += [P(
+        "Embedding-based <i>remember()</i> must associate a new turn with an "
+        "existing memory before <i>observe()</i> can apply the escalation rule. "
+        "A single global similarity threshold fails on paraphrases (MiniLM scores "
+        "0.44&ndash;0.53 on mood/preference rephrasings). <b>Slot-aware linking</b> "
+        "adds a domain-scoped fallback: volatile singleton slots (mood, location, "
+        "task) and preference sibling domains link at a volatility-scaled lower "
+        "threshold.")]
+    story += [make_table([
+        ["scenario", "VoltMem", "Mem0 (real)"],
+        ["mood update", "1 fact, correct top", "2 facts, stale top"],
+        ["preference change", "1 fact, correct top", "2 facts, stale top"],
+        ["location change", "1 fact, correct top", "2 facts, stale top"],
+    ], col_widths=[50 * mm, 50 * mm, 50 * mm], highlight_col=1)]
+    story += [P("Scripted case study (3/3 current-truth wins), not a public-benchmark "
+                "SOTA claim. Linking quality depends on the embedding backend.", CAP)]
+
+    story += [P("5.8  Retrieval haystack &amp; LongMemEval-S", H2)]
+    story += [P(
+        "Noisy haystack (5 slots &times; 20 runs, 6 stale decoys + 3 distractors "
+        "per slot, top-5):")]
+    story += [make_table([
+        ["system", "current@1", "current@5", "stale@1", "separation"],
+        ["voltmem_real", "0.600", "1.000", "0.000", "0.153"],
+        ["voltmem_flat", "0.800", "1.000", "0.200", "0.133"],
+        ["voltmem_swap", "0.650", "1.000", "0.200", "0.111"],
+        ["similarity_only", "0.600", "0.800", "0.200", "&minus;0.003"],
+    ], col_widths=[38 * mm, 24 * mm, 24 * mm, 24 * mm, 30 * mm], highlight_col=1)]
+    story += [P(
+        "PASS: real avoids stale volatile traps (0% stale@1 vs 20% cosine), finds "
+        "current in top-5 more often (100% vs 80%), separation real &gt; swap. "
+        "On LongMemEval-S (n=60, chunk-calibrated ingest), answer@5 is 0.700 (real) "
+        "tying cosine; flat 0.717 leads slightly; swap 0.667 &lt; real. "
+        "Preference type recovers to 0.700 (was 0.300 with heuristic domains).",
+        CAP)]
+
     # ── 6. Caveats ────────────────────────────────────────────────────────
     story += [P("6. Caveats", H1)]
     story += bullets([
@@ -345,9 +382,15 @@ def build():
         "<b>EMA fixed-point drift.</b> Reliability weighting slows erosion but "
         "does not anchor the estimate to the domain prior; a prior-anchored "
         "update is the natural next step.",
-        "<b>Keyword retrieval &amp; manual partitioning.</b> Production needs "
-        "embedding similarity and automatic volatility detection from "
-        "gradient-conflict signals.",
+        "<b>Embedding backend variance.</b> Linking thresholds are calibrated for "
+        "sentence-transformers (MiniLM); production should pin or calibrate per "
+        "backend.",
+        "<b>LongMemEval overall.</b> At n=30, answer@5 does not beat plain cosine; "
+        "report per-type causal signals honestly.",
+        "<b>Manual partitioning.</b> Automatic volatility detection from "
+        "gradient-conflict signals remains open work.",
+        "<b>Vector index (v0.2).</b> SQLite ANN accelerates candidate retrieval; "
+        "volatility re-rank is unchanged (engineering, not a separate claim).",
         "<b>No replay-baseline comparison</b> yet (GEM, A-GEM, Synaptic "
         "Intelligence) — volatility-weighting may be additive or redundant.",
     ])
@@ -366,8 +409,11 @@ def build():
         "enough to state precisely what it is and is not, is the actual thing this "
         "piece demonstrates.")]
     story += [hr()]
-    story += [P("Code and full reproduction scripts available on request · "
-                "richard@[domain]", CAP)]
+    story += [P(
+        "Code: <b>github.com/Rouche01/voltmem</b> &middot; "
+        "Package: <b>pypi.org/project/voltmem</b> (v0.2.0) &middot; "
+        "Reproduction: paper/findings.md, docs/RESEARCH.md",
+        CAP)]
 
     doc = SimpleDocTemplate(
         OUT, pagesize=A4,

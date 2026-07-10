@@ -24,7 +24,10 @@ Systems compared
   * similarity_only — same chunks, cosine similarity only (no freshness weighting)
 
 Ingestion: every chat turn is stored as a chunk (standard LongMemEval / RAG
-practice). VoltMem's contribution is tested at **retrieval ranking** — whether
+practice). Chunks use a **session-scoped domain profile** (user turns →
+``stated_preference``, assistant → ``opinion``) so real volatility priors
+age out old haystack noise instead of treating chat logs as eternal traits.
+VoltMem's contribution is tested at **retrieval ranking** — whether
 volatility-weighted freshness surfaces the right evidence vs flat cosine search.
 (Update policy is covered separately in llm_memory_bench.py.)
 
@@ -59,7 +62,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import voltmem.domains as vdomains  # noqa: E402
 from voltmem import MemoryLayer, EmbeddingSimilarity  # noqa: E402
-from voltmem.extract import HeuristicExtractor  # noqa: E402
 
 SYSTEMS = ("voltmem_real", "voltmem_flat", "voltmem_swap", "similarity_only")
 SPLIT_MAP = {
@@ -168,6 +170,20 @@ def haystack_stats(instance: dict) -> tuple[int, int]:
     return len(sessions), turns
 
 
+def chunk_domain(role: str) -> str:
+    """Domain for raw chat-log chunks in RAG-style ingestion.
+
+    Heuristic per-turn classification treats prefs as ``core_preference`` (V≈0.08),
+    which under-penalizes old haystack noise. Session-scoped labels let real priors
+    demote stale turns without changing ``remember()`` / ``HeuristicExtractor``.
+    Assistant turns use ``opinion`` (not ultra-volatile ``transient_fact``) so
+    evidence-bearing replies are not over-penalized by age.
+    """
+    if role == "user":
+        return "stated_preference"
+    return "opinion"
+
+
 def ingest_instance(mem: MemoryLayer, instance: dict) -> None:
     """Store each chat turn as a chunk with the session timestamp."""
     sessions = list(zip(
@@ -177,7 +193,6 @@ def ingest_instance(mem: MemoryLayer, instance: dict) -> None:
     ))
     sessions.sort(key=lambda x: parse_lme_datetime(x[1]))
 
-    extractor = HeuristicExtractor()
     for _sid, date_str, sess in sessions:
         ts = parse_lme_datetime(date_str)
         for turn in sess:
@@ -189,7 +204,7 @@ def ingest_instance(mem: MemoryLayer, instance: dict) -> None:
             prefix = "User" if role == "user" else "Assistant"
             stmt = f"{prefix}: {text}"
             source = "explicit_statement" if role == "user" else "weak_inference"
-            dom = extractor.classify_domain(text)
+            dom = chunk_domain(role)
             mem.write(stmt, domain=dom, source=source, at_time=ts)
 
 

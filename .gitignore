@@ -222,4 +222,5 @@ __marimo__/
 
 # VoltMem
 voltmem.db
+chat_app.db
 uv.lock
