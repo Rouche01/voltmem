@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 from .domains import MemoryItem
+from .discovery import DomainStats
 
 
 _CREATE_TABLE = """
@@ -32,6 +33,15 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_domain ON memories(namespace, domain);
 CREATE INDEX IF NOT EXISTS idx_active ON memories(namespace, superseded_by);
+CREATE TABLE IF NOT EXISTS domain_stats (
+    namespace     TEXT NOT NULL,
+    domain        TEXT NOT NULL,
+    n_confirms    INTEGER DEFAULT 0,
+    n_mismatches  INTEGER DEFAULT 0,
+    n_supersedes  INTEGER DEFAULT 0,
+    mismatch_sum  REAL    DEFAULT 0.0,
+    PRIMARY KEY (namespace, domain)
+);
 """
 
 
@@ -196,6 +206,51 @@ class MemoryStore:
     def delete_namespace(self, namespace: str) -> None:
         """Remove every row for a tenant (including superseded history)."""
         self._conn.execute("DELETE FROM memories WHERE namespace=?", (namespace,))
+        self._conn.execute(
+            "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
+        self._conn.commit()
+
+    # ── domain stats (auto-discovery) ─────────────────────────────────────────
+
+    def get_domain_stats(
+        self, namespace: str, domain: str
+    ) -> Optional[DomainStats]:
+        row = self._conn.execute(
+            "SELECT * FROM domain_stats WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        ).fetchone()
+        if not row:
+            return None
+        return DomainStats.from_row(dict(row))
+
+    def all_domain_stats(self, namespace: str) -> dict[str, DomainStats]:
+        rows = self._conn.execute(
+            "SELECT * FROM domain_stats WHERE namespace=?",
+            (namespace,),
+        ).fetchall()
+        return {dict(r)["domain"]: DomainStats.from_row(dict(r)) for r in rows}
+
+    def upsert_domain_stats(self, namespace: str, stats: DomainStats) -> None:
+        row = stats.to_row(namespace)
+        self._conn.execute("""
+            INSERT INTO domain_stats (
+                namespace, domain, n_confirms, n_mismatches,
+                n_supersedes, mismatch_sum
+            ) VALUES (
+                :namespace, :domain, :n_confirms, :n_mismatches,
+                :n_supersedes, :mismatch_sum
+            )
+            ON CONFLICT(namespace, domain) DO UPDATE SET
+                n_confirms=:n_confirms,
+                n_mismatches=:n_mismatches,
+                n_supersedes=:n_supersedes,
+                mismatch_sum=:mismatch_sum
+        """, row)
+        self._conn.commit()
+
+    def delete_domain_stats_namespace(self, namespace: str) -> None:
+        self._conn.execute(
+            "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
         self._conn.commit()
 
     def close(self):

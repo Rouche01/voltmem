@@ -54,6 +54,10 @@ class ChatSession:
     def clear_memories(self) -> None:
         self.memory.clear()
 
+    def discovery_report(self) -> dict[str, Any]:
+        """Domain auto-discovery stats for ``/discovery``."""
+        return self.memory.summary()
+
     def reset_history(self) -> None:
         self._history.clear()
 

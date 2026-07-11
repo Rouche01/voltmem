@@ -12,7 +12,7 @@ With Ollama (optional, for real replies):
     ollama pull llama3.1
     python -m examples.chat_app
 
-Slash commands: /help /memories /search /clear /reset /quit
+Slash commands: /help /memories /search /discovery /clear /reset /quit
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from voltmem import create_memory
 
-from .display import format_memories, format_writes
+from .display import format_discovery, format_memories, format_writes
 from .llm import create_llm
 from .session import ChatSession
 
@@ -38,6 +38,7 @@ COMMANDS = {
     "/memories": "List all stored memories",
     "/mem": "Alias for /memories",
     "/search": "Search memories — /search <query>",
+    "/discovery": "Show learned domain volatility stats",
     "/clear": "Delete all memories for this user",
     "/reset": "Clear in-session chat history (memories kept)",
     "/verbose": "Toggle showing recalled memories each turn",
@@ -78,12 +79,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print recalled memories on every turn",
     )
+    p.add_argument(
+        "--auto-discover",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Learn per-domain volatility from usage (default: on)",
+    )
     return p
 
 
-def print_banner(backend: str, db: str, user_id: str) -> None:
+def print_banner(backend: str, db: str, user_id: str, *, auto_discover: bool) -> None:
+    discover = "on" if auto_discover else "off"
     print("VoltMem chat")
-    print(f"  db={db}  user={user_id}  llm={backend}")
+    print(f"  db={db}  user={user_id}  llm={backend}  auto_discover={discover}")
     print("  Type /help for commands. Empty line ignored.\n")
 
 
@@ -114,6 +122,9 @@ def handle_command(
             print("  usage: /search <query>")
             return True, show_recall
         print(format_memories(session.search_memories(arg), show_score=True))
+        return True, show_recall
+    if cmd == "/discovery":
+        print(format_discovery(session.discovery_report()))
         return True, show_recall
     if cmd == "/clear":
         session.clear_memories()
@@ -192,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         user_id=args.user_id,
         verbose=args.verbose_embeddings,
         llm_extract=args.llm_extract,
+        auto_discover=args.auto_discover,
     )
 
     try:
@@ -200,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             llm,
             recall_limit=args.recall_limit,
         )
-        print_banner(backend, args.db, args.user_id)
+        print_banner(backend, args.db, args.user_id, auto_discover=args.auto_discover)
 
         if args.demo:
             run_demo(session, show_recall=args.show_recall)

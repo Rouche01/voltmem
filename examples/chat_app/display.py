@@ -27,3 +27,24 @@ def format_writes(writes: list[dict[str, Any]]) -> str:
         domain = w.get("domain", "?")
         parts.append(f"{action} [{domain}]")
     return "  memory: " + ", ".join(parts)
+
+
+def format_discovery(report: dict[str, Any]) -> str:
+    """Format domain auto-discovery stats from ``ChatSession.discovery_report()``."""
+    if not report.get("auto_discover"):
+        return "  auto_discover is off (restart with --auto-discover)"
+
+    domains: dict[str, dict[str, Any]] = report.get("domain_discovery") or {}
+    if not domains:
+        return "  (no domain observations yet — chat to build stats)"
+
+    lines = ["  Domain volatility (prior → empirical → resolved):"]
+    for name in sorted(domains):
+        d = domains[name]
+        lines.append(
+            f"  {name:<22}  prior={d['prior']:.3f}  "
+            f"empirical={d['empirical']:.3f}  resolved={d['resolved']:.3f}  "
+            f"confirms={d['n_confirms']}  mismatches={d['n_mismatches']}  "
+            f"supersedes={d['n_supersedes']}"
+        )
+    return "\n".join(lines)

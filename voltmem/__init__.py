@@ -53,11 +53,14 @@ from .vector_index import (
 )
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
+from .discovery import DomainStats, VolatilityTracker, blend_volatility
 from .scoring import (
     escalation_score,
     retrieval_score,
     staleness,
     protection_weight,
+    update_volatility_ema,
+    VOL_DRIFT_MAX,
 )
 
 __all__ = [
@@ -86,10 +89,15 @@ __all__ = [
     "LLMExtractor",
     "HeuristicFactExtractor",
     "LLMFactExtractor",
+    "DomainStats",
+    "VolatilityTracker",
+    "blend_volatility",
     "escalation_score",
     "retrieval_score",
     "staleness",
     "protection_weight",
+    "update_volatility_ema",
+    "VOL_DRIFT_MAX",
 ]
 
 __version__ = "0.2.0"

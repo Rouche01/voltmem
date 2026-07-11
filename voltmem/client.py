@@ -61,6 +61,7 @@ def create_memory(
     llm_extract: bool = False,
     llm_domain: bool = False,
     vector_index: str = "auto",
+    auto_discover: bool = False,
     ollama_url: str = "http://localhost:11434",
     llm_model: str = "qwen2.5-coder:14b",
     **kwargs: Any,
@@ -82,6 +83,9 @@ def create_memory(
     vector_index : str
         ``auto`` (sqlite index when embedder present), ``sqlite``, ``brute``,
         or ``off`` for full-scan retrieval.
+    auto_discover : bool
+        When True, learn per-domain volatility from confirm/mismatch/supersede
+        patterns and blend with hand-tuned priors (prior-anchored EMA).
     llm_extract : bool
         Deprecated — use ``fact_extractor="llm"``.
     llm_domain : bool
@@ -124,6 +128,7 @@ def create_memory(
     layer_kwargs.setdefault("vector_index", vector_index)
     layer_kwargs.setdefault("embed_fn", embed_fn)
     layer_kwargs.setdefault("relate_threshold", relate_threshold)
+    layer_kwargs.setdefault("auto_discover", auto_discover)
 
     return Memory(
         user_id=user_id,

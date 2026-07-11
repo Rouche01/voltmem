@@ -26,6 +26,7 @@ Usage:
     # result.action tells you what happened: "confirmed", "audited", "inserted"
 """
 
+import copy
 import time
 import uuid
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ from . import domains as _domains
 from .vector_index import VectorIndex, create_vector_index
 from .extract import HeuristicExtractor
 from .store import MemoryStore
+from .discovery import VolatilityTracker
 from .scoring import (
     staleness,
     retrieval_score,
@@ -110,11 +112,14 @@ class MemoryLayer:
         vector_index: Union[VectorIndex, str, None] = "auto",
         embed_fn: Optional[Callable[[str], list[float]]] = None,
         candidate_multiplier: int = 5,
+        auto_discover: bool = False,
     ):
         self._store = MemoryStore(db_path)
         self.load = load
         self.goal_delta_default = goal_delta_default
         self.namespace = namespace
+        self.auto_discover = auto_discover
+        self._tracker = VolatilityTracker(self._store) if auto_discover else None
         self._similarity_fn = similarity_fn or self._similarity
         self._embed_fn = embed_fn
         self.candidate_multiplier = max(1, candidate_multiplier)
@@ -155,6 +160,8 @@ class MemoryLayer:
         view.load = self.load
         view.goal_delta_default = self.goal_delta_default
         view.namespace = namespace
+        view.auto_discover = self.auto_discover
+        view._tracker = self._tracker
         view._similarity_fn = self._similarity_fn
         view._extractor = self._extractor
         view.relate_threshold = self.relate_threshold
@@ -249,6 +256,7 @@ class MemoryLayer:
         # several, pick the best semantic match so distinct facts in the same
         # domain don't collide (e.g. two different core_preferences).
         candidate = self._select_candidate(content, existing)
+        scoring_item = self._resolve_item_for_scoring(candidate)
 
         # ── escalation decision uses the volatility we knew BEFORE this
         #    observation. We judge the observation against the item's established
@@ -257,7 +265,7 @@ class MemoryLayer:
         #    its own threshold — a self-fulfilling loop in which one confident
         #    blip overwrites an otherwise-stable fact.
         E_t, theta_t = escalation_score(
-            candidate, mismatch_magnitude, source, gd, ld)
+            scoring_item, mismatch_magnitude, source, gd, ld)
         escalate = E_t > theta_t
 
         # ── now fold this observation into the volatility EMA (reliability-
@@ -273,6 +281,7 @@ class MemoryLayer:
             candidate.repetition_count += 1
             candidate.last_confirmed_at = now
             self._store.update(candidate)
+            self._record_domain_observation("confirmed", domain, mismatch_magnitude)
             return WriteResult(
                 action="confirmed",
                 item=candidate,
@@ -283,6 +292,8 @@ class MemoryLayer:
             # mismatch present but below threshold — log it, don't update content
             candidate.mismatch_count += 1
             self._store.update(candidate)
+            self._record_domain_observation(
+                "logged_mismatch", domain, mismatch_magnitude)
             return WriteResult(
                 action="logged_mismatch",
                 item=candidate,
@@ -316,6 +327,7 @@ class MemoryLayer:
         self._store.update(candidate)
         self._index_delete(candidate.id)
         self._index_upsert(new_item)
+        self._record_domain_observation("audited", domain, mismatch_magnitude)
 
         return WriteResult(
             action="audited",
@@ -437,8 +449,9 @@ class MemoryLayer:
         scored = []
         eval_now = now if now is not None else time.time()
         for item, sim in candidates:
+            scoring_item = self._resolve_item_for_scoring(item)
             if use_staleness:
-                score = retrieval_score(item, sim, eval_now)
+                score = retrieval_score(scoring_item, sim, eval_now)
             else:
                 score = float(sim)
             if score >= min_score:
@@ -468,17 +481,18 @@ class MemoryLayer:
             return {"error": f"Item {item_id} not found"}
         if item.namespace != self.namespace:
             return {"error": f"Item {item_id} not found"}
+        scoring_item = self._resolve_item_for_scoring(item)
         now = time.time()
-        stale = staleness(item, now)
-        prot = protection_weight(item)
-        return {
+        stale = staleness(scoring_item, now)
+        prot = protection_weight(scoring_item)
+        out = {
             "id": item.id,
             "content": item.content,
             "domain": item.domain,
             "namespace": item.namespace,
             "source": item.source,
             "repetition_count": item.repetition_count,
-            "effective_volatility": item.effective_volatility,
+            "effective_volatility": scoring_item.effective_volatility,
             "protection_weight": prot,
             "staleness": round(stale, 4),
             "mismatch_count": item.mismatch_count,
@@ -486,6 +500,16 @@ class MemoryLayer:
             "age_days": round((now - item.created_at) / 86400, 2),
             "days_since_confirmed": round((now - item.last_confirmed_at) / 86400, 2),
         }
+        if self._tracker is not None:
+            stats = self._tracker.get_stats(self.namespace, item.domain)
+            if stats is not None:
+                out["domain_stats"] = {
+                    "empirical_volatility": round(stats.empirical_volatility, 4),
+                    "n_confirms": stats.n_confirms,
+                    "n_mismatches": stats.n_mismatches,
+                    "n_supersedes": stats.n_supersedes,
+                }
+        return out
 
     def summary(self) -> dict:
         """High-level summary of the memory store for this namespace."""
@@ -497,9 +521,36 @@ class MemoryLayer:
             "namespace": self.namespace,
             "total_active_memories": len(all_items),
             "by_domain": by_domain,
+            "auto_discover": self.auto_discover,
+            "domain_discovery": (
+                self._tracker.summary(self.namespace) if self._tracker else {}
+            ),
         }
 
     # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _resolve_item_for_scoring(self, item: MemoryItem) -> MemoryItem:
+        """Apply learned domain volatility when auto_discover is enabled."""
+        if self._tracker is None:
+            return item
+        resolved = self._tracker.resolve_volatility(
+            self.namespace, item.domain, item.volatility_ema)
+        if item.volatility_ema >= 0:
+            current = item.volatility_ema
+        else:
+            current = DOMAIN_VOLATILITY.get(item.domain, 0.5)
+        if abs(resolved - current) < 1e-9:
+            return item
+        resolved_item = copy.copy(item)
+        resolved_item.volatility_ema = resolved
+        return resolved_item
+
+    def _record_domain_observation(
+        self, action: str, domain: str, mismatch: float = 0.0
+    ) -> None:
+        if self._tracker is None:
+            return
+        self._tracker.record(self.namespace, domain, action, mismatch)
 
     def _retrieve_candidates(
         self, query: str, domain: str | None, top_k: int
@@ -657,6 +708,8 @@ class MemoryLayer:
         self._store.delete_namespace(self.namespace)
         if self._vector_index is not None:
             self._vector_index.delete_namespace(self.namespace)
+        if self._tracker is not None:
+            self._tracker.clear_namespace(self.namespace)
 
     def __enter__(self):
         return self

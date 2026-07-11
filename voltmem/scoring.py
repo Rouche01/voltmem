@@ -35,6 +35,8 @@ GAMMA = 2.0          # volatility exponent in protection weight:
 
 BETA = 0.5           # EMA decay for per-item volatility update
 
+VOL_DRIFT_MAX = 0.2  # per-item EMA may drift at most this far from domain prior
+
 STALENESS_HALFLIFE = {   # days at which an item reaches 50% staleness
     # derived from V_d: halflife ≈ ln(2) / V_d (in days)
     # pre-computed for reference; staleness() uses V_d directly
@@ -155,9 +157,12 @@ def update_volatility_ema(
 
     Returns the updated EMA value.
     """
-    current = item.effective_volatility
+    prior = DOMAIN_VOLATILITY.get(item.domain, 0.5)
+    current = item.volatility_ema if item.volatility_ema >= 0 else prior
     reliability = SOURCE_RELIABILITY.get(source, 0.5)
     reliability = min(max(reliability, 0.0), 1.0)
     alpha = (1.0 - BETA) * reliability
     updated = (1.0 - alpha) * current + alpha * observed_mismatch
-    return float(updated)
+    lo = max(0.05, prior - VOL_DRIFT_MAX)
+    hi = min(0.95, prior + VOL_DRIFT_MAX)
+    return float(min(max(updated, lo), hi))
