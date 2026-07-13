@@ -226,3 +226,9 @@ chat_app.db
 uv.lock
 docs/LAUNCH_POST.md
 docs/LAUNCH_POST_COPYPASTE.txt
+docs/DEVTO_POST.md
+docs/DEVTO_POST_ALT.md
+docs/DEVTO_POST_MERGED.md
+docs/assets/
+scripts/
+
