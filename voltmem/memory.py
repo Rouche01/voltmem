@@ -49,7 +49,7 @@ from .scoring import (
     retrieval_score,
     update_volatility_ema,
     protection_weight,
-    escalation_score,
+    escalation_decision,
 )
 
 
@@ -264,9 +264,10 @@ class MemoryLayer:
         #    let a single surprising signal inflate measured volatility and lower
         #    its own threshold — a self-fulfilling loop in which one confident
         #    blip overwrites an otherwise-stable fact.
-        E_t, theta_t = escalation_score(
+        # Cap θ / cumulative overrides live in escalation_decision — do not
+        # compare raw E_t > theta_t here or medium-stable domains stay stuck.
+        escalate, E_t, theta_t = escalation_decision(
             scoring_item, mismatch_magnitude, source, gd, ld)
-        escalate = E_t > theta_t
 
         # ── now fold this observation into the volatility EMA (reliability-
         #    weighted, single update). Future decisions benefit from the learned
@@ -332,7 +333,7 @@ class MemoryLayer:
         return WriteResult(
             action="audited",
             item=new_item,
-            detail=(f"E_t={E_t:.3f} > theta_t={theta_t:.3f}; "
+            detail=(f"E_t={E_t:.3f} vs theta_t={theta_t:.3f}; "
                     f"old item {candidate.id[:8]} superseded."),
         )
 

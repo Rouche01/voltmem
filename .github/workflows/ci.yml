@@ -25,6 +25,9 @@ jobs:
       - name: Run core tests
         run: python tests/test_voltmem.py
 
+      - name: VoltMem end-to-end eval (escalation + retrieval)
+        run: python experiments/voltmem_eval.py
+
       - name: Run client tests
         run: python tests/test_client.py
 

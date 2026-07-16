@@ -14,6 +14,7 @@ from voltmem.domains import MemoryItem
 from voltmem.scoring import (
     escalation_score, staleness, retrieval_score,
     protection_weight, should_escalate,
+    EXPLICIT_MIN_VD,
 )
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -30,6 +31,11 @@ def make_item(domain="core_preference", rep=1, vol_ema=-1.0):
         created_at=now,
         last_confirmed_at=now,
     )
+
+
+def make_item_v(v_d: float, domain="professional_context", rep=1):
+    """Item with explicit effective volatility (simulates auto_discover drift)."""
+    return make_item(domain=domain, rep=rep, vol_ema=v_d)
 
 
 # ── 1. Protection weight ──────────────────────────────────────────────────────
@@ -101,6 +107,111 @@ def test_threshold_scales_inversely_with_volatility():
     _, theta_volatile = escalation_score(volatile, mismatch_magnitude=0.5)
     assert theta_stable > theta_volatile, \
         "Stable domain should have higher audit threshold (harder to trigger)"
+
+def test_explicit_high_mismatch_updates_stable_professional_context():
+    """P0: career change with explicit statement must escalate despite low V_d."""
+    item = make_item(domain="professional_context")  # V_d = 0.30
+    # Raw score alone fails (E≈0.28 < θ=0.5); band θ-cap must let it through.
+    E_t, theta_t = escalation_score(
+        item, mismatch_magnitude=0.90, source="explicit_statement")
+    assert E_t <= theta_t, "precondition: formula alone should block"
+    assert should_escalate(
+        item, mismatch_magnitude=0.90, source="explicit_statement"), \
+        "High-M explicit correction must update professional_context"
+
+
+def test_escalation_medium_stable_v_grid_explicit_updates():
+    """Drift-safe: explicit high-M should escalate across medium-stable V_d."""
+    for v in [0.15, 0.20, 0.25, 0.30, 0.35, 0.45, 0.55]:
+        item = make_item_v(v)
+        assert should_escalate(
+            item, mismatch_magnitude=0.90, source="explicit_statement"), \
+            f"medium-stable V_d={v} should escalate on explicit high-M"
+
+
+def test_escalation_very_stable_v_grid_explicit_retains():
+    """Very-stable band: explicit high-M must not one-shot update (pref blips)."""
+    for v in [0.05, 0.08, 0.10, 0.12]:
+        assert v < EXPLICIT_MIN_VD
+        item = make_item_v(v, domain="core_preference")
+        assert not should_escalate(
+            item, mismatch_magnitude=0.90, source="explicit_statement"), \
+            f"very-stable V_d={v} must retain on explicit high-M"
+
+
+def test_explicit_cap_scales_with_drifted_volatility():
+    """V_d drifted down within band (0.20) still updates; below band uses cumulative."""
+    drifted = make_item_v(0.20)
+    assert should_escalate(
+        drifted, mismatch_magnitude=0.90, source="explicit_statement")
+    below_band = make_item_v(0.12, domain="biographical")
+    assert not should_escalate(
+        below_band, mismatch_magnitude=0.90, source="explicit_statement")
+    below_band.mismatch_count = 3
+    assert should_escalate(
+        below_band, mismatch_magnitude=0.70, source="strong_inference")
+
+def test_weak_evidence_still_retained_on_stable_domain():
+    """θ-cap must not weaken retain-on-noise / very-stable behaviour."""
+    item = make_item(domain="personality_trait")
+    assert not should_escalate(
+        item, mismatch_magnitude=0.60, source="weak_inference")
+    assert not should_escalate(
+        item, mismatch_magnitude=0.75, source="strong_inference")
+    # remember() uses explicit_statement + heuristic M≈0.9 on pref blips
+    pref = make_item(domain="core_preference")
+    assert not should_escalate(
+        pref, mismatch_magnitude=0.90, source="explicit_statement"), \
+        "core_preference paraphrase must still retain under θ-cap"
+
+def test_cumulative_mismatches_eventually_escalate():
+    item = make_item(domain="professional_context")
+    item.mismatch_count = 3
+    assert should_escalate(
+        item, mismatch_magnitude=0.70, source="strong_inference"), \
+        "After enough logged mismatches, further conflict should escalate"
+
+def test_observe_audits_explicit_career_change():
+    with MemoryLayer(":memory:") as mem:
+        mem.write("User works as a data analyst", domain="professional_context")
+        res = mem.observe(
+            "User explicitly said they changed careers and now work as a nurse",
+            domain="professional_context",
+            mismatch_magnitude=0.90,
+            source="explicit_statement",
+        )
+        assert res.action == "audited", f"expected audited, got {res.action}"
+
+
+def test_cumulative_mismatches_integration_audits_career_change():
+    """Below-band V_d: three logged conflicts then strong inference escalates."""
+    with MemoryLayer(":memory:") as mem:
+        item = mem.write(
+            "User works as a data analyst", domain="biographical")
+        stored = mem._store.get(item.item.id)
+        stored.volatility_ema = 0.12
+        mem._store.update(stored)
+
+        for text in (
+            "User mentioned a different role in passing",
+            "User said something else about work",
+            "User brought up career again",
+        ):
+            r = mem.observe(
+                text,
+                domain="biographical",
+                mismatch_magnitude=0.65,
+                source="weak_inference",
+            )
+            assert r.action == "logged_mismatch"
+
+        final = mem.observe(
+            "User explicitly said they changed careers and now work as a nurse",
+            domain="biographical",
+            mismatch_magnitude=0.75,
+            source="strong_inference",
+        )
+        assert final.action == "audited", f"expected audited, got {final.action}"
 
 # ── 4. Retrieval score ────────────────────────────────────────────────────────
 
@@ -449,6 +560,38 @@ def test_langchain_memory_roundtrip():
         memory.close()
 
 
+# ── Battery A regression (experiments/voltmem_eval.py) ────────────────────────
+
+def test_voltmem_eval_battery_a_real_profile():
+    """CI gate: expanded escalation probes must stay green under real priors."""
+    from experiments.voltmem_eval import (
+        CUMULATIVE_ESCALATION_PROBES,
+        ESCALATION_PROBES,
+        run_escalation,
+    )
+
+    correct, n, rows = run_escalation("real")
+    expected_n = len(ESCALATION_PROBES) + len(CUMULATIVE_ESCALATION_PROBES)
+    failed = [r for r in rows if not r[3]]
+    assert n == expected_n and correct == n, (
+        f"Battery A real: {correct}/{n} (expected {expected_n}); failures="
+        + ", ".join(f"{r[0]} want={r[1]} got={r[2]} ({r[5]})" for r in failed)
+    )
+
+
+def test_voltmem_eval_battery_a_real_beats_controls():
+    """Causal check: true priors outperform flat and swap on the expanded suite."""
+    from experiments.voltmem_eval import run_escalation
+
+    c_real, n_real, _ = run_escalation("real")
+    c_flat, n_flat, _ = run_escalation("flat")
+    c_swap, n_swap, _ = run_escalation("swap")
+    a_real, a_flat, a_swap = c_real / n_real, c_flat / n_flat, c_swap / n_swap
+    assert a_real > a_flat and a_real >= a_swap and a_real > 0.5, (
+        f"causal fail: real={a_real:.0%} flat={a_flat:.0%} swap={a_swap:.0%}"
+    )
+
+
 # ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -461,6 +604,16 @@ if __name__ == "__main__":
         test_low_mismatch_stable_does_not_escalate,
         test_high_repetition_suppresses_escalation,
         test_threshold_scales_inversely_with_volatility,
+        test_explicit_high_mismatch_updates_stable_professional_context,
+        test_escalation_medium_stable_v_grid_explicit_updates,
+        test_escalation_very_stable_v_grid_explicit_retains,
+        test_explicit_cap_scales_with_drifted_volatility,
+        test_weak_evidence_still_retained_on_stable_domain,
+        test_cumulative_mismatches_eventually_escalate,
+        test_observe_audits_explicit_career_change,
+        test_cumulative_mismatches_integration_audits_career_change,
+        test_voltmem_eval_battery_a_real_profile,
+        test_voltmem_eval_battery_a_real_beats_controls,
         test_stale_volatile_item_ranked_lower_than_fresh,
         test_stable_item_age_barely_penalised,
         test_write_and_retrieve,

@@ -12,8 +12,10 @@ Two capabilities are measured:
   A) SELECTIVE UPDATING (escalation).  When a new observation contradicts a
      stored memory, VoltMem should UPDATE volatile facts readily (job, mood,
      current task) but RETAIN stable facts under weak evidence (personality,
-     core preferences), while still updating even a stable fact given strong,
-     reliable evidence.
+     core preferences). Medium-stable domains (e.g. professional_context) update
+     on high-M explicit evidence via the V_d band θ-cap; very-stable domains
+     (biographical, core_preference) retain on one-shot explicit and only update
+     after cumulative strong evidence.
 
   B) FRESHNESS-AWARE RETRIEVAL.  When ranking memories, a stale VOLATILE memory
      should be pushed down (it has probably gone out of date), while a stable
@@ -70,9 +72,13 @@ def volatility_profile(profile):
 
 
 # ── Battery A: selective updating (escalation) ────────────────────────────────
-# Each probe: bootstrap a base fact, feed one contradicting observation, and
-# check whether the layer updated ("audited") or kept it ("confirmed"/
-# "logged_mismatch"). expected: "U" = should update, "R" = should retain.
+# Single-shot probe:
+#   (domain, base, obs, mm, src, expected, note)
+#   expected: "U" = should update (audited), "R" = should retain
+#
+# Cumulative probe (multi-turn):
+#   (domain, base, [(obs, mm, src, expected), ...], note)
+#   every step must match; scores as one probe.
 
 ESCALATION_PROBES = [
     # realistic volatile updates (legit, strong, reliable) -> should UPDATE
@@ -100,10 +106,30 @@ ESCALATION_PROBES = [
      "Someone mentioned Nairobi in passing", 0.50,
      "weak_inference", "R", "stable: noisy hearsay"),
 
-    # stable fact under STRONG reliable evidence -> should still UPDATE
+    # medium-stable band: high-M explicit -> UPDATE (θ-cap)
     ("professional_context", "User works as a data analyst",
      "User explicitly said they changed careers and now work as a nurse", 0.90,
-     "explicit_statement", "U", "stable but real change, strong evidence"),
+     "explicit_statement", "U", "medium-band: career change, explicit"),
+    ("skill", "User is proficient in Python",
+     "User explicitly said they no longer use Python and work in Rust now", 0.90,
+     "explicit_statement", "U", "medium-band: skill change, explicit"),
+    ("relationship", "User works closely with Alice",
+     "User explicitly said they no longer work with Alice", 0.90,
+     "explicit_statement", "U", "medium-band: relationship change, explicit"),
+    ("long_term_goal", "User wants to become a research scientist",
+     "User explicitly said their goal is now to start a company", 0.90,
+     "explicit_statement", "U", "medium-band: goal change, explicit"),
+
+    # below-band (very stable): high-M explicit one-shot -> RETAIN
+    ("core_preference", "User prefers concise, direct answers",
+     "User explicitly said they now prefer long, detailed explanations", 0.90,
+     "explicit_statement", "R", "below-band: pref flip one-shot retains"),
+    ("biographical", "User grew up in Lagos",
+     "User explicitly said they grew up in Nairobi", 0.90,
+     "explicit_statement", "R", "below-band: bio flip one-shot retains"),
+    ("personality_trait", "User is deeply introverted",
+     "User explicitly said they are now highly extroverted", 0.90,
+     "explicit_statement", "R", "below-band: trait flip one-shot retains"),
 
     # matched-pressure discriminators: SAME mismatch/source, extreme domains.
     # Only the domain volatility differs, so these isolate the volatility signal.
@@ -121,9 +147,33 @@ ESCALATION_PROBES = [
      "strong_inference", "R", "matched: stable should hold"),
 ]
 
+# Below-band real changes: N weak logged mismatches, then strong evidence updates.
+CUMULATIVE_ESCALATION_PROBES = [
+    ("biographical", "User grew up in Lagos",
+     [
+         ("Someone mentioned Nairobi in passing", 0.65, "weak_inference", "R"),
+         ("Another acquaintance said Nairobi", 0.65, "weak_inference", "R"),
+         ("A third mention of growing up in Nairobi", 0.65, "weak_inference", "R"),
+         ("User confirmed they grew up in Nairobi", 0.75, "strong_inference", "U"),
+     ],
+     "below-band: cumulative then strong updates bio"),
+    ("core_preference", "User prefers concise, direct answers",
+     [
+         ("User asked for more detail once", 0.65, "weak_inference", "R"),
+         ("User lingered on a long explanation", 0.65, "weak_inference", "R"),
+         ("User praised a verbose reply", 0.65, "weak_inference", "R"),
+         ("User said they now prefer detailed answers", 0.75, "strong_inference", "U"),
+     ],
+     "below-band: cumulative then strong updates pref"),
+]
+
 
 def action_is_update(action):
     return action == "audited"
+
+
+def _got_ur(action):
+    return "U" if action_is_update(action) else "R"
 
 
 def run_escalation(profile):
@@ -135,11 +185,31 @@ def run_escalation(profile):
                 mem.write(base, domain=domain)
                 res = mem.observe(obs, domain=domain, mismatch_magnitude=mm,
                                   source=src)
-                got = "U" if action_is_update(res.action) else "R"
+                got = _got_ur(res.action)
                 ok = (got == expected)
                 correct += ok
                 rows.append((domain, expected, got, ok, res.action, note))
-    return correct, len(ESCALATION_PROBES), rows
+
+        for (domain, base, steps, note) in CUMULATIVE_ESCALATION_PROBES:
+            with MemoryLayer(":memory:") as mem:
+                mem.write(base, domain=domain)
+                step_ok = True
+                last_action = last_expected = last_got = None
+                for obs, mm, src, expected in steps:
+                    res = mem.observe(
+                        obs, domain=domain, mismatch_magnitude=mm, source=src)
+                    got = _got_ur(res.action)
+                    last_action, last_expected, last_got = res.action, expected, got
+                    if got != expected:
+                        step_ok = False
+                        break
+                ok = step_ok
+                correct += ok
+                rows.append(
+                    (domain, last_expected, last_got, ok, last_action, note))
+
+    n = len(ESCALATION_PROBES) + len(CUMULATIVE_ESCALATION_PROBES)
+    return correct, n, rows
 
 
 # ── Battery B: freshness-aware retrieval ──────────────────────────────────────
