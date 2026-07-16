@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
@@ -16,7 +16,7 @@ volatile memories rank lower at search time.
 
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
-**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md)
+**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md)
 
 ---
 
@@ -102,6 +102,7 @@ flowchart LR
 | User moves cities | Berlin and Paris both stored | **Updates** to current city |
 | Old project name in haystack | Ranks by similarity | **Down-ranks** stale volatile facts |
 | Confident wrong blip on stable pref | Often accepted | **Resists** corruption |
+| Career / role change (medium-stable) | Often blocked or duplicated | **Updates** on strong explicit contradiction |
 
 ### Example results (reproducible)
 
@@ -137,6 +138,15 @@ Run locally with `pip install -e ".[embeddings]"`. Embeddings:
 **VoltMem clearer wins: 3/3.** Mem0 keeps contradictory facts; VoltMem updates volatile
 slots and protects stable prefs via domain volatility + slot-aware linking.
 
+**`experiments/voltmem_eval.py`** — end-to-end escalation + retrieval (real vs flat vs swap):
+
+| Battery | real profile | flat (equal V) | swap (inverted V) |
+|---|---|---|---|
+| A — selective updating | **20/20** | 15/20 | 7/20 |
+| B — retrieval separation | **+0.589** | +0.202 | −0.267 |
+
+Includes the `professional_context` career-change probe (strong explicit evidence → update).
+
 **`experiments/memory_demo.py`** — 3 final Q&A checks vs ground truth:
 
 | Policy | Score |
@@ -154,6 +164,7 @@ facts and **tracks weak-but-true updates** on volatile ones. Full distributions:
 python examples/contradiction_demo.py
 python experiments/mem0_comparison.py
 python experiments/mem0_side_by_side.py   # pip install mem0ai; OPENAI_API_KEY or MEM0_BACKEND=ollama
+python experiments/voltmem_eval.py        # 20/20 escalation probes + retrieval separation
 python experiments/memory_demo.py
 ```
 
@@ -194,6 +205,8 @@ bob   = create_memory("app.db", user_id="bob")
 | `examples/contradiction_demo.py` | VoltMem vs always-add on contradictions |
 | `experiments/mem0_comparison.py` | 3-scenario head-to-head vs always-add |
 | `experiments/mem0_side_by_side.py` | 3-scenario head-to-head vs real Mem0 (3/3 wedge) |
+| `experiments/voltmem_eval.py` | End-to-end escalation + retrieval (20/20 probes, real > flat > swap) |
+| `experiments/calibrate_escalation.py` | Print E_t vs θ table for tuning explicit-override constants |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
 | `examples/langchain_agent.py` | LangChain adapter |
@@ -220,12 +233,17 @@ Slash commands: `/memories`, `/search <query>`, `/clear`, `/reset`, `/help`.
 | `personality_trait` | 0.05 | Very protected |
 | `core_preference` | 0.08 | Very protected |
 | `biographical` | 0.10 | High protection |
+| `professional_context` | 0.30 | Medium — job/role (career changes) |
+| `location` | 0.60 | Updates readily (Berlin → Paris) |
 | `current_project` | 0.55 | Updates readily |
 | `emotional_context` | 0.80 | Fast-moving |
 | `current_task` | 0.90 | Minimal protection |
 
 Custom domains: register via ``DomainRegistry`` and pass to ``create_memory(domains=...)``.
 Pluggable classifiers: ``create_memory(classifier=...)`` — ``"heuristic"``, ``"llm"``, ``KeywordClassifier``, or a callable dict.
+
+Optional: ``create_memory(..., auto_discover=True)`` learns per-domain volatility from
+confirm / mismatch / supersede patterns (blended with priors above; cold-start applies).
 
 ```python
 from voltmem import create_memory, DomainRegistry, KeywordClassifier, ChainedClassifier, HeuristicClassifier
@@ -262,6 +280,7 @@ python tests/test_client.py
 ```
 
 Experiments and benchmarks live in `experiments/` — see [docs/RESEARCH.md](docs/RESEARCH.md).
+Open problems and roadmap: [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md).
 
 ---
 
