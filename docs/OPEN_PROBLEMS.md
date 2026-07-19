@@ -145,6 +145,159 @@ Relevant eval probes: `experiments/voltmem_eval.py` → `ESCALATION_PROBES`
 
 ---
 
+## Problem 3 — Under-specified retrieval (similarity plateaus)
+
+*From dev.to feedback (Jul 2026). Retrieval-time issue; not write-path classification.*
+
+### What it is
+
+Volatility re-ranking assumes a useful similarity gap between candidates:
+
+```
+staleness = 1 - exp(-V_d · age_days)
+score     = similarity · (1 - V_d · staleness)
+```
+
+When the **query** is specific ("where do I live?", "what's my allergy?"), similarity
+already separates good hits from noise, and the staleness term is a useful second filter.
+
+When the **query** is under-specified ("what was I working on?", "remind me about
+that thing"), many memories look about equally related. Similarity scores flatten.
+Then a slightly more similar high-volatility memory can outrank a stabler memory that
+is the better answer — the similarity gap is smaller than the volatility penalty.
+
+### Symptoms
+
+- Open / temporal / multi-session prompts where several domains are vaguely relevant
+- LongMemEval-S (n=60): `voltmem_real` **ties** cosine answer@5 (0.700) and loses
+  slightly to flat (0.717) — consistent with "freshness helps on some axes, not a
+  free win when similarity is uninformative"
+- Haystack and scripted benches (specific current-truth probes) still favor volatility
+  re-rank — the failure mode is query shape, not "re-rank is always wrong"
+
+### What exists today
+
+| Mechanism | Notes |
+|---|---|
+| Cosine (or index) candidate fetch | First-stage semantic proximity |
+| `retrieval_score()` | Multiplies similarity by volatility-weighted freshness |
+| Vector index (v0.2) | Faster candidates; same re-rank formula |
+
+No second-stage signal for "does this memory answer the question?" beyond similarity.
+
+### Suggested directions
+
+- [ ] **Eval slice by query specificity** — stratify LongMemEval / custom probes into
+  specific vs open prompts; report answer@k separately (do not only report overall)
+- [ ] **Answerability / task-affinity rerank** — second stage after volatility score:
+  entity grounding, session/task recency, "current project" affinity, or a small
+  cross-encoder — not a replacement for `V_d` staleness
+- [ ] **Query-aware penalty scaling** — dampen `(1 - V_d · staleness)` when top-k
+  similarity variance is low (plateau detected)
+- [ ] **Keep TTL separate** — optional hard expiry (Enhancement below) does not fix
+  under-specified ranking
+
+### What this does not fix
+
+- Wrong domain at write time (Problem 1)
+- Stable-fact escalation gap (Problem 2)
+- Multi-facet / multimodal events (Problem 4)
+- Known calendar end dates (optional TTL)
+
+### Priority
+
+P2 — important for real agent prompts; evidence first (specificity slice) before
+rewriting `retrieval_score()`.
+
+---
+
+## Problem 4 — Multi-facet multimodal events (beyond chat memory)
+
+*From dev.to feedback (Jul 2026). Scope expansion: any agent that needs memory,
+not only chat-style text facts.*
+
+### What it is
+
+VoltMem today assumes roughly: **one observation → one text fact → one domain →
+one volatility prior**. That fits conversational agents. It underfits domains where
+a single real-world tick carries several kinds of signal at once — e.g. a robot
+sample with GPS (location), IMU (activity), voice command (task), and a map patch
+(spatial). Those facets must stay **linked as one event** while decaying and
+auditing **independently**.
+
+The volatility thesis is modality-agnostic: a corridor map should not forget at the
+same rate as a battery estimate from the same 50 ms tick. The gap is API + item
+shape, not the math in `scoring.py`.
+
+**Framing:** not “every fact must be multimodal,” but “every observation *can* be a
+multi-facet event.” Plain text facts remain first-class.
+
+**Scope discipline:** VoltMem stays the **policy layer** (domain → \(V_d\), write
+protection, freshness re-rank, audit). It should not become a multimodal database
+or embedding model suite — storage and encoders stay pluggable.
+
+### Symptoms / current limits
+
+- `MemoryItem.content` is a single string; no `event_id`, modality, or binary/structured payload
+- `mem.add(...)` classifies and stores one domain per call
+- Classifiers and embeddings are text-oriented (`extract.py`, `embeddings.py`)
+- No retrieve-by-event (“give me the whole tick”) vs retrieve-by-facet (“stable map only”)
+
+### What exists today
+
+| Mechanism | Notes |
+|---|---|
+| Per-item domain + \(V_d\) | Already supports different decay if facets are separate items |
+| Optional TTL (Enhancement) | Composes with per-facet expiry once facets exist |
+| Pluggable `similarity_fn` / embeddings | Path to non-text encoders without rewriting escalation math |
+| Custom `DomainRegistry` | App can register robot/sensor domains + priors |
+
+### Suggested directions (phased)
+
+- [ ] **`event_id` + multi-write** — one observation → N domain-tagged items that share
+  an event key (and optional `modality`: text / image / audio / sensor / structured)
+- [ ] **Modality-agnostic item shape** — text *or* structured/binary payload + embedding
+  reference; same `effective_volatility`, escalation, and `retrieval_score` path
+- [ ] **Per-facet volatility / TTL** — each facet keeps its own domain prior (and optional
+  `expires_at`); event linkage does not force a shared forget rate
+- [ ] **Event-aware retrieve** — APIs for “expand event”, “prefer facet domain”, or
+  assemble a unified view for the agent without collapsing policies
+- [ ] **Classifier path for multi-label** — emit several (domain, content/payload) facets
+  per observation; confidence per facet (ties to Problem 1)
+- [ ] **Eval** — synthetic multi-facet ticks (stable map + volatile battery); assert
+  linked retrieval + independent stale@k / audit behavior
+- [ ] **Later: store adapters** — optional backends (SQLite today, vector DB, multimodal
+  stores) behind the policy API — not a rewrite of VoltMem as the store
+
+Sketch:
+
+```python
+mem.add_event(
+    event_id="tick-50ms-001",
+    facets=[
+        {"content": "corridor map patch A12", "domain": "spatial_map", "modality": "structured"},
+        {"content": "battery 37%", "domain": "power_state", "modality": "sensor"},
+        {"content": "go to charging dock", "domain": "current_task", "modality": "text"},
+    ],
+)
+# Same event_id; each facet has its own V_d / audit / staleness.
+```
+
+### What this does not fix
+
+- Classification quality for each facet (Problem 1) — multi-label makes it harder
+- Stable-fact escalation (Problem 2)
+- Under-specified “what’s going on?” queries (Problem 3) — multimodal open prompts
+  make answerability rerank *more* important
+- Building a general multimodal DB product
+
+### Priority
+
+P3 for full multimodal payloads / store adapters; **P2 for `event_id` + multi-write**
+as the enabling API — unblocks robotics/IoT/tool agents without changing core math.
+
+---
+
 ## Enhancement — Optional TTL hybrid (time-limited memories)
 
 *From dev.to feedback (Jul 2026). Complements volatility-weighted decay; does not replace it.*
@@ -193,6 +346,8 @@ Expired facts are down-ranked (volatile domains faster), not dropped by a hard c
 
 - Classification brittleness (Problem 1)
 - Stable-fact escalation gap (Problem 2)
+- Under-specified retrieval / similarity plateaus (Problem 3)
+- Multi-facet / multimodal event linkage (Problem 4) — TTL is complementary once facets exist
 - Wrong TTL on a stable fact is its own failure mode (same class as misclassification)
 
 ### Suggested design
@@ -223,21 +378,112 @@ P2 — useful for production apps with known-lifetime context; not urgent vs P0/
 
 ---
 
-## How the two problems interact
+## Enhancement — Prior calibration telemetry
+
+*From dev.to feedback (Jul 2026). Observability / calibration — not a new memory
+mechanism. Makes hand-tuned domain priors and audit thresholds checkable in real use.*
+
+### What it is
+
+Domain priors (\(V_d\)) and the audit decision \(E_t > \theta_t\) encode assumptions
+about how often each kind of fact should change. Without per-domain counts of what
+actually happens at write time, it is hard to tell which priors are too conservative
+(almost never audit) and which are too permissive (audit constantly).
+
+This enhancement is **measurement**: expose rates so operators and researchers can
+validate the library’s defaults — and tune `DomainRegistry` / `auto_discover` with
+evidence.
+
+### What “right” looks like (informal)
+
+| Signal | Too conservative | Too permissive |
+|---|---|---|
+| Audit rate for volatile domains (e.g. mood, location) | Near zero despite contradictions | — |
+| Audit rate for stable domains (e.g. biographical) | — | High on weak / noisy mismatches |
+| `logged_mismatch` without eventual audit | Mismatches pile up; threshold never crossed | — |
+| Confirm vs contradict mix | — | Contradicts dominate “stable” domains |
+
+A simple **histogram (or table) of audit / mismatch / confirm counts per domain**
+answers the commenter’s ask and pairs well with the REAL > SHUFFLE > SWAP causal story.
+
+### What exists today
+
+| Mechanism | Notes |
+|---|---|
+| Per-item `mismatch_count` | Cumulative below-threshold mismatches on that item |
+| Actions | `confirmed`, `audited`, `logged_mismatch`, `inserted`, … |
+| `VolatilityTracker` (`auto_discover=True`) | Blends empirical volatility with priors; not a reporting API |
+| `calibrate_escalation.py` | Offline θ-band calibration; not production telemetry |
+
+No first-class export of **per-domain** audit-fire rates from live or logged traffic.
+
+### Suggested design
+
+- [ ] **Counters per domain** — `audited`, `logged_mismatch`, `confirmed`, `inserted`
+  (and optionally mismatch magnitude buckets)
+- [ ] **Export API** — e.g. `mem.domain_stats()` → table/JSON suitable for a histogram
+- [ ] **Optional log sink** — append-only events for offline analysis without holding
+  state in the hot path
+- [ ] **Docs / notebook** — how to read “stubborn vs twitchy” priors from the chart
+- [ ] **Eval hook** — print the same table after `voltmem_eval` / LongMemEval runs so
+  synthetic benches leave a calibration footprint
+
+Sketch:
+
+```python
+stats = mem.domain_stats()
+# {
+#   "location": {"audited": 42, "logged_mismatch": 11, "confirmed": 80, ...},
+#   "biographical": {"audited": 1, "logged_mismatch": 9, "confirmed": 120, ...},
+# }
+```
+
+### What this does not fix
+
+- Wrong labels (Problem 1) — telemetry *reveals* miscalibration; it does not relabel
+- Escalation math gaps (Problem 2) — may show θ is too high/low; fixing still needs
+  scoring / API changes
+- Under-specified retrieval (Problem 3) — write-path rates, not search ranking
+- Multi-facet events (Problem 4) — extend counters by `(domain, modality)` later
+
+### Priority
+
+P2 — high leverage, relatively cheap; strengthens scientific and production confidence
+in priors before large classifier or multimodal work.
+
+---
+
+## How the problems interact
 
 ```
 Wrong domain label  →  wrong volatility prior  →  wrong escalation + retrieval
         ↑                                              ↓
    Problem 1                                      Problem 2
  (classification)                          (stable-fact update gap)
+        ↑                                          ↓
+   Problem 4                                  Problem 3
+ (multi-facet events:                  (under-specified queries:
+  N labels / payloads                   similarity flat → V_d
+  per observation)                      penalty can invert rank)
+
+Prior calibration telemetry (Enhancement)
+  → measures audit / mismatch / confirm rates per domain
+  → feeds tuning of Problem 1 priors and Problem 2 thresholds
 ```
 
-Fixing one without the other is incomplete:
+Fixing one without the others is incomplete:
 
 - Better escalation alone does not fix a fact labeled `core_preference` when it should be
   `professional_context`
 - Better classification alone does not fix the `professional_context` probe failure when the
   label is correct but protection is too strong
+- Correct labels + escalation still leave open prompts where similarity is uninformative
+  and volatility re-rank can pick the wrong winner (Problem 3)
+- Multi-facet events (Problem 4) multiply Problem 1 (N labels per tick) and make
+  Problem 3 more common (“what’s going on?” across sensors); they do not replace
+  volatility math — they require event linkage + per-facet policy
+- Telemetry does not replace any of the above — it makes prior/threshold assumptions
+  visible so fixes are evidence-driven
 
 ---
 
@@ -250,8 +496,12 @@ Fixing one without the other is incomplete:
 | P1 | High-M explicit override (drift-safe) | Done — `explicit_theta_cap()` + `calibrate_escalation.py` |
 | P1 | Expand escalation eval + CI | Done — below/medium-band + cumulative probes |
 | P2 | Classification eval corpus | Measure Problem 1; needed before LLM classifier work |
+| P2 | Prior calibration telemetry | Per-domain audit/mismatch/confirm rates; validate priors |
+| P2 | Under-specified retrieval (Problem 3) | Specificity eval slice first; then answerability / adaptive penalty |
+| P2 | Multi-facet `event_id` + multi-write (Problem 4) | Enabling API for non-chat agents; core math unchanged |
 | P2 | Optional TTL hybrid (`expires_at`) | App-defined lifetimes; complements volatility staleness |
 | P2 | Cloud LLM classifier | Roadmap item; does not alone fix drift |
+| P3 | Multimodal payloads / store adapters (Problem 4) | After event linkage; keep VoltMem as policy layer |
 | P3 | Automatic domain discovery | Larger research scope |
 
 ---
@@ -265,4 +515,5 @@ Fixing one without the other is incomplete:
 - Classifiers: [../voltmem/classifiers.py](../voltmem/classifiers.py), [../voltmem/extract.py](../voltmem/extract.py)
 - End-to-end eval: [../experiments/voltmem_eval.py](../experiments/voltmem_eval.py)
 - Escalation calibration: [../experiments/calibrate_escalation.py](../experiments/calibrate_escalation.py)
+- LongMemEval / research notes: [RESEARCH.md](RESEARCH.md)
 - arXiv checklist: [../paper/ARXIV_SUBMISSION.md](../paper/ARXIV_SUBMISSION.md)
