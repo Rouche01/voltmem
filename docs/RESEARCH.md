@@ -37,6 +37,7 @@ Split-MNIST; the agent-memory library validates it on update policy and retrieva
 | Agent retrieval (noisy haystack) | **0%** stale@1 vs **20%** cosine; sep **0.153** | PASS (real > swap) |
 | LongMemEval-S (n=30, stratified) | **70.0%** answer@5 (real); cosine **73.3%** | swap **60.0%** < real; gains on `knowledge-update` |
 | LongMemEval-S (n=60, scaled) | real **70.0%** ties cosine; flat **71.7%** | swap **66.7%** < real; chunk-calibrated ingest |
+| LongMemEval-S + adaptive mix (n=30) | real **73.3%** ties cosine/flat | specific=open delta 0; open spread lower; swap 66.7% |
 | Continual learning (Split-MNIST) | +0.055 REAL−SWAP | `--sabotage` passes |
 
 ---
@@ -48,7 +49,9 @@ Protection weight: \(w_d = 1 / V_d^{\gamma}\)
 Escalation: \(E_t = [(M_t \cdot R_t) / C^{\alpha}] \cdot V_d \cdot G_t\), threshold
 \(\theta_t = \theta_0 / V_d \cdot L_t\) — audit iff \(E_t > \theta_t\).
 
-Retrieval: \(\text{score} = \text{similarity} \cdot (1 - V_d \cdot \text{staleness})\).
+Retrieval: \(\text{score} = \text{similarity} \cdot (1 - m \cdot V_d \cdot \text{staleness})\),
+where \(m=\texttt{freshness\_mix}(\text{sim spread})\) dampens freshness on similarity
+plateaus (Problem 3; \(m=1\) when top-candidate spread is informative).
 
 Full derivation: [paper/findings.md §2](../paper/findings.md).
 
@@ -92,7 +95,10 @@ python experiments/llm_memory_bench.py
 # retrieval haystack
 python experiments/retrieval_haystack_bench.py
 
-# public benchmark
+# Problem 3 plateau probe (no HF download)
+python experiments/retrieval_plateau_probe.py
+
+# public benchmark (prints specific vs open + avg sim spread by default)
 python experiments/longmemeval.py --split s --quick
 python experiments/longmemeval.py --split s --per-type 5
 python experiments/longmemeval.py --split s --per-type 10   # scaled n≈60
@@ -155,6 +161,34 @@ Per-type answer hit rate:
 heuristic ingest); real ties cosine overall. Flat still +1.7pp — not SOTA, but
 validates retrieval-layer parity with documented ingestion assumptions.
 
+### LongMemEval-S + specificity / adaptive mix (n=30, per-type 5)
+
+Run: `python experiments/longmemeval.py --split s --per-type 5` (2026-07-20;
+`all-MiniLM-L6-v2`; adaptive `freshness_mix` enabled).
+
+| system | answer@5 | evidence@5 | avg_spread |
+|--------|----------|------------|------------|
+| voltmem_real | **0.733** | **0.900** | 0.325 |
+| voltmem_flat | **0.733** | **0.900** | 0.325 |
+| similarity_only | **0.733** | **0.900** | 0.325 |
+| voltmem_swap | 0.667 | 0.867 | 0.325 |
+
+By specificity (answer@5):
+
+| bucket | real | similarity | avg_spread |
+|--------|------|------------|------------|
+| specific | 0.750 | 0.750 | 0.366 |
+| open | 0.700 | 0.700 | 0.244 |
+
+**Read:** open queries show lower sim spread than specific (plateau signal), but
+both averages sit above `SIM_SPREAD_FULL` (0.15) on this split/backend, so
+adaptive mix rarely engages here. Real ties cosine on both buckets; swap still
+worse overall. Synthetic plateau probe + unit tests cover the dampening path.
+Answerability rerank remains open if a future open-slice gap appears.
+
+Haystack after adaptive mix (same embedder): stale@1 **0%** vs cosine **20%**;
+sep **0.153** (real > swap) — no regression on the noisy-haystack wedge.
+
 ---
 
 ## Limitations
@@ -166,7 +200,8 @@ validates retrieval-layer parity with documented ingestion assumptions.
 - Linking thresholds vary by embedding backend; pin or calibrate in production.
 - LongMemEval overall does not beat flat at n=60; real ties cosine (0.700) with
   chunk-calibrated ingest; report per-type signals honestly.
-- Vector index (v0.2) accelerates retrieval; volatility re-rank is unchanged.
+- Vector index (v0.2) accelerates retrieval; volatility re-rank applies adaptive
+  freshness mix on similarity plateaus (Problem 3).
 
 ---
 

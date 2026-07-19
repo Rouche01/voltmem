@@ -50,6 +50,8 @@ from .scoring import (
     update_volatility_ema,
     protection_weight,
     escalation_decision,
+    similarity_spread,
+    freshness_mix,
 )
 
 
@@ -449,10 +451,19 @@ class MemoryLayer:
 
         scored = []
         eval_now = now if now is not None else time.time()
+        # Plateau detection on the top similarity pool (not the full corpus).
+        pool_n = max(top_k * self.candidate_multiplier, top_k, 2)
+        by_sim = sorted(candidates, key=lambda x: x[1], reverse=True)[:pool_n]
+        probe_sims = [s for _, s in by_sim]
+        if use_staleness and len(probe_sims) >= 2:
+            mix = freshness_mix(similarity_spread(probe_sims))
+        else:
+            mix = 1.0
+
         for item, sim in candidates:
             scoring_item = self._resolve_item_for_scoring(item)
             if use_staleness:
-                score = retrieval_score(scoring_item, sim, eval_now)
+                score = retrieval_score(scoring_item, sim, eval_now, mix=mix)
             else:
                 score = float(sim)
             if score >= min_score:

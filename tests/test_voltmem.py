@@ -14,7 +14,8 @@ from voltmem.domains import MemoryItem
 from voltmem.scoring import (
     escalation_score, staleness, retrieval_score,
     protection_weight, should_escalate,
-    EXPLICIT_MIN_VD,
+    similarity_spread, freshness_mix,
+    EXPLICIT_MIN_VD, MIX_MIN, SIM_SPREAD_FLAT, SIM_SPREAD_FULL,
 )
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -248,6 +249,92 @@ def test_stable_item_age_barely_penalised():
     # but weight=0.05 so penalty = 0.05 * ~1.0 = 0.05 → score ≈ 0.8*0.95=0.76
     assert score > 0.70, \
         f"Stable item should barely be penalised for age; got {score:.3f}"
+
+
+def test_similarity_spread_and_freshness_mix():
+    assert similarity_spread([]) == 0.0
+    assert similarity_spread([0.5]) == 0.0
+    assert abs(similarity_spread([0.70, 0.72]) - 0.02) < 1e-9
+    assert freshness_mix(0.0) == MIX_MIN
+    assert freshness_mix(SIM_SPREAD_FLAT) == MIX_MIN
+    assert freshness_mix(SIM_SPREAD_FULL) == 1.0
+    assert freshness_mix(0.50) == 1.0
+    mid = freshness_mix((SIM_SPREAD_FLAT + SIM_SPREAD_FULL) / 2)
+    assert MIX_MIN < mid < 1.0
+
+
+def test_retrieval_score_mix_dampens_staleness_penalty():
+    """On a plateau, lower mix shrinks freshness-driven score gaps."""
+    now = time.time()
+    old = now - 20 * 86400
+    volatile = MemoryItem(
+        id="v1", content="mood", domain="current_task",
+        source="explicit_statement",
+        created_at=old, last_confirmed_at=old,
+    )
+    stable = MemoryItem(
+        id="s1", content="pref", domain="core_preference",
+        source="explicit_statement",
+        created_at=old, last_confirmed_at=old,
+    )
+    gap_full = abs(
+        retrieval_score(volatile, 0.71, now=now, mix=1.0)
+        - retrieval_score(stable, 0.70, now=now, mix=1.0)
+    )
+    gap_damp = abs(
+        retrieval_score(volatile, 0.71, now=now, mix=MIX_MIN)
+        - retrieval_score(stable, 0.70, now=now, mix=MIX_MIN)
+    )
+    assert gap_damp < gap_full, \
+        f"dampened mix should shrink cross-domain score gap; {gap_damp} vs {gap_full}"
+
+
+def test_plateau_retrieve_dampens_vs_clear_gap():
+    """Near-equal sims → mix < 1; large sim gap → full freshness (mix = 1)."""
+    now = time.time()
+    old = now - 14 * 86400
+
+    def plateau_sim(query, content):
+        return {"volatile fact": 0.705, "stable fact": 0.700}.get(content, 0.0)
+
+    def clear_sim(query, content):
+        return {"volatile fact": 0.90, "stable fact": 0.40}.get(content, 0.0)
+
+    with MemoryLayer(":memory:", similarity_fn=plateau_sim) as mem:
+        mem.write("volatile fact", domain="current_task", at_time=old)
+        mem.write("stable fact", domain="core_preference", at_time=old)
+        # Force-confirm timestamps (write may refresh)
+        for it in mem._active():
+            it.last_confirmed_at = old
+            it.created_at = old
+            mem._store.update(it)
+        plateau = mem.retrieve("what was I doing", top_k=2, now=now)
+        assert len(plateau.items) == 2
+        # Spread 0.005 → MIX_MIN; volatile penalty reduced vs mix=1
+        vol = next(i for i in mem._active() if i.content == "volatile fact")
+        stab = next(i for i in mem._active() if i.content == "stable fact")
+        score_damp_v = retrieval_score(vol, 0.705, now=now, mix=MIX_MIN)
+        score_full_v = retrieval_score(vol, 0.705, now=now, mix=1.0)
+        assert score_damp_v > score_full_v
+        # Ranking uses dampened path: scores should match mix=MIX_MIN
+        by_id = {i.content: s for i, s in zip(plateau.items, plateau.scores)}
+        assert abs(by_id["volatile fact"] - score_damp_v) < 1e-9
+
+    with MemoryLayer(":memory:", similarity_fn=clear_sim) as mem:
+        # Fresh volatile + clear sim gap → full mix; volatile should win.
+        mem.write("volatile fact", domain="current_task", at_time=now)
+        mem.write("stable fact", domain="core_preference", at_time=old)
+        for it in mem._active():
+            if it.content == "stable fact":
+                it.last_confirmed_at = old
+                it.created_at = old
+                mem._store.update(it)
+        clear = mem.retrieve("volatile fact query", top_k=2, now=now)
+        vol = next(i for i in mem._active() if i.content == "volatile fact")
+        expected = retrieval_score(vol, 0.90, now=now, mix=1.0)
+        by_id = {i.content: s for i, s in zip(clear.items, clear.scores)}
+        assert abs(by_id["volatile fact"] - expected) < 1e-9
+        assert clear.items[0].content == "volatile fact"
 
 # ── 5. MemoryLayer integration ────────────────────────────────────────────────
 
@@ -616,6 +703,9 @@ if __name__ == "__main__":
         test_voltmem_eval_battery_a_real_beats_controls,
         test_stale_volatile_item_ranked_lower_than_fresh,
         test_stable_item_age_barely_penalised,
+        test_similarity_spread_and_freshness_mix,
+        test_retrieval_score_mix_dampens_staleness_penalty,
+        test_plateau_retrieve_dampens_vs_clear_gap,
         test_write_and_retrieve,
         test_low_mismatch_confirms_not_supersedes,
         test_high_mismatch_volatile_supersedes,

@@ -58,6 +58,13 @@ STALENESS_HALFLIFE = {   # days at which an item reaches 50% staleness
     # pre-computed for reference; staleness() uses V_d directly
 }
 
+# Problem 3 — dampen freshness when top-candidate similarity is flat
+# (under-specified queries). mix=1 → today's full V_d penalty; mix→MIX_MIN
+# on a plateau so volatility cannot invert near-ties.
+SIM_SPREAD_FLAT = 0.05   # max−min sim at/below this → mix = MIX_MIN
+SIM_SPREAD_FULL = 0.15   # at/above this → mix = 1.0 (full freshness)
+MIX_MIN = 0.25           # floor freshness weight on a plateau
+
 
 # ── core equations ────────────────────────────────────────────────────────────
 
@@ -188,22 +195,57 @@ def staleness(item: MemoryItem, now: float | None = None) -> float:
     return float(1.0 - math.exp(-V_d * age_days))
 
 
+def similarity_spread(sims: list[float] | tuple[float, ...]) -> float:
+    """max(sim) − min(sim) over candidates; 0.0 if fewer than two scores."""
+    if len(sims) < 2:
+        return 0.0
+    return float(max(sims) - min(sims))
+
+
+def freshness_mix(
+    spread: float,
+    *,
+    flat: float = SIM_SPREAD_FLAT,
+    full: float = SIM_SPREAD_FULL,
+    mix_min: float = MIX_MIN,
+) -> float:
+    """
+    How strongly to apply V_d·staleness given top-candidate similarity spread.
+
+    Returns 1.0 when spread is informative (specific query), mix_min when
+    similarity is flat (under-specified / plateau), and linearly interpolates
+    between. Fewer than two candidates should pass spread=0 but callers ought
+    to treat that as mix=1.0 (no plateau signal) — see MemoryLayer.retrieve.
+    """
+    if full <= flat:
+        return 1.0
+    if spread >= full:
+        return 1.0
+    if spread <= flat:
+        return float(mix_min)
+    t = (spread - flat) / (full - flat)
+    return float(mix_min + (1.0 - mix_min) * t)
+
+
 def retrieval_score(
     item: MemoryItem,
     semantic_similarity: float,         # [0,1] from embedding or keyword match
     now: float | None = None,
+    mix: float = 1.0,
 ) -> float:
     """
     Combined retrieval score balancing semantic relevance and freshness.
 
-    score = semantic_similarity * (1 - staleness_weight * staleness)
+    score = semantic_similarity * (1 - mix * V_d * staleness)
 
-    staleness_weight scales with volatility so that stable memories are
-    barely penalised for age, while volatile memories decay fast.
+    V_d scales how much age hurts (volatile → more). ``mix`` (default 1)
+    further scales that penalty; values < 1 dampen freshness when candidate
+    similarities are flat (Problem 3 — under-specified queries).
     """
-    stale  = staleness(item, now)
+    stale = staleness(item, now)
     weight = item.effective_volatility  # volatile → staleness matters more
-    return float(semantic_similarity * (1.0 - weight * stale))
+    m = float(max(0.0, min(1.0, mix)))
+    return float(semantic_similarity * (1.0 - m * weight * stale))
 
 
 def update_volatility_ema(

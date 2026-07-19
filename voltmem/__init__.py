@@ -60,7 +60,12 @@ from .scoring import (
     staleness,
     protection_weight,
     update_volatility_ema,
+    similarity_spread,
+    freshness_mix,
     VOL_DRIFT_MAX,
+    SIM_SPREAD_FLAT,
+    SIM_SPREAD_FULL,
+    MIX_MIN,
 )
 
 __all__ = [
@@ -97,7 +102,12 @@ __all__ = [
     "staleness",
     "protection_weight",
     "update_volatility_ema",
+    "similarity_spread",
+    "freshness_mix",
     "VOL_DRIFT_MAX",
+    "SIM_SPREAD_FLAT",
+    "SIM_SPREAD_FULL",
+    "MIX_MIN",
 ]
 
 __version__ = "0.2.0"

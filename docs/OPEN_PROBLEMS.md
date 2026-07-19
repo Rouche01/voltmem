@@ -155,8 +155,11 @@ Volatility re-ranking assumes a useful similarity gap between candidates:
 
 ```
 staleness = 1 - exp(-V_d · age_days)
-score     = similarity · (1 - V_d · staleness)
+score     = similarity · (1 - mix · V_d · staleness)
 ```
+
+`mix` defaults to 1 (full freshness). When top-candidate similarity spread is
+flat, `mix` drops toward `MIX_MIN` so volatility cannot dominate near-ties.
 
 When the **query** is specific ("where do I live?", "what's my allergy?"), similarity
 already separates good hits from noise, and the staleness term is a useful second filter.
@@ -175,25 +178,35 @@ is the better answer — the similarity gap is smaller than the volatility penal
 - Haystack and scripted benches (specific current-truth probes) still favor volatility
   re-rank — the failure mode is query shape, not "re-rank is always wrong"
 
-### What exists today
+### What exists today (Jul 2026)
 
-| Mechanism | Notes |
-|---|---|
-| Cosine (or index) candidate fetch | First-stage semantic proximity |
-| `retrieval_score()` | Multiplies similarity by volatility-weighted freshness |
-| Vector index (v0.2) | Faster candidates; same re-rank formula |
+| Mechanism | Location | Notes |
+|---|---|---|
+| Cosine (or index) candidate fetch | `MemoryLayer` | First-stage semantic proximity |
+| `retrieval_score(..., mix=)` | `scoring.py` | `sim · (1 − mix · V_d · staleness)` |
+| Adaptive `freshness_mix` | `scoring.py` / `retrieve()` | Plateau dampening from sim spread |
+| Specificity + sim-spread report | `experiments/longmemeval.py` | `--report-specificity` (default on) |
+| Synthetic plateau probe | `experiments/retrieval_plateau_probe.py` + tests | CI-fast failure-mode check |
+| Vector index (v0.2) | `vector_index.py` | Faster candidates; same re-rank + mix |
 
-No second-stage signal for "does this memory answer the question?" beyond similarity.
+Specificity buckets (fixed):
+
+- **specific:** `knowledge-update`, `single-session-preference`, `single-session-user`, `single-session-assistant`
+- **open:** `temporal-reasoning`, `multi-session`
+
+Plateau constants: `SIM_SPREAD_FLAT=0.05`, `SIM_SPREAD_FULL=0.15`, `MIX_MIN=0.25`.
+Spread is measured on the top similarity pool (`top_k · candidate_multiplier`).
+
+No answerability / cross-encoder second stage yet.
 
 ### Suggested directions
 
-- [ ] **Eval slice by query specificity** — stratify LongMemEval / custom probes into
-  specific vs open prompts; report answer@k separately (do not only report overall)
+- [x] **Eval slice by query specificity** — LongMemEval reports specific vs open + avg sim spread
 - [ ] **Answerability / task-affinity rerank** — second stage after volatility score:
   entity grounding, session/task recency, "current project" affinity, or a small
-  cross-encoder — not a replacement for `V_d` staleness
-- [ ] **Query-aware penalty scaling** — dampen `(1 - V_d · staleness)` when top-k
-  similarity variance is low (plateau detected)
+  cross-encoder — not a replacement for `V_d` staleness; only if open slice still lags
+- [x] **Query-aware penalty scaling** — dampen freshness via `mix` when top-pool similarity
+  spread is low (plateau detected)
 - [ ] **Keep TTL separate** — optional hard expiry (Enhancement below) does not fix
   under-specified ranking
 
@@ -203,11 +216,11 @@ No second-stage signal for "does this memory answer the question?" beyond simila
 - Stable-fact escalation gap (Problem 2)
 - Multi-facet / multimodal events (Problem 4)
 - Known calendar end dates (optional TTL)
+- Full answerability ranking (deferred)
 
 ### Priority
 
-P2 — important for real agent prompts; evidence first (specificity slice) before
-rewriting `retrieval_score()`.
+P2 — specificity eval + adaptive mix shipped; answerability only if open-slice gap persists.
 
 ---
 
@@ -320,10 +333,10 @@ VoltMem uses **soft, domain-weighted decay at retrieval** (not hard expiry):
 
 ```
 staleness = 1 - exp(-V_d · age_days)
-score     = similarity · (1 - V_d · staleness)
+score     = similarity · (1 - mix · V_d · staleness)
 ```
 
-See `voltmem/scoring.py` → `staleness()`, `retrieval_score()`.
+See `voltmem/scoring.py` → `staleness()`, `retrieval_score()`, `freshness_mix()`.
 
 `MemoryItem` has `created_at` and `last_confirmed_at` but **no** `expires_at` field.
 Expired facts are down-ranked (volatile domains faster), not dropped by a hard cutoff.
@@ -497,7 +510,7 @@ Fixing one without the others is incomplete:
 | P1 | Expand escalation eval + CI | Done — below/medium-band + cumulative probes |
 | P2 | Classification eval corpus | Measure Problem 1; needed before LLM classifier work |
 | P2 | Prior calibration telemetry | Per-domain audit/mismatch/confirm rates; validate priors |
-| P2 | Under-specified retrieval (Problem 3) | Specificity eval slice first; then answerability / adaptive penalty |
+| P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
 | P2 | Multi-facet `event_id` + multi-write (Problem 4) | Enabling API for non-chat agents; core math unchanged |
 | P2 | Optional TTL hybrid (`expires_at`) | App-defined lifetimes; complements volatility staleness |
 | P2 | Cloud LLM classifier | Roadmap item; does not alone fix drift |

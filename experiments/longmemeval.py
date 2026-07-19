@@ -35,6 +35,8 @@ Metrics (at top-k)
 ------------------
   * answer_hit   — ground-truth answer (normalized) found in recalled text
   * evidence_hit — overlap with turns marked has_answer=True in the dataset
+  * specificity  — answer@k + avg sim spread for specific vs open question_types
+                   (Problem 3; --report-specificity / --no-report-specificity)
 
 Run:
     .venv/bin/python experiments/longmemeval.py --quick          # oracle, 2 per type
@@ -70,6 +72,34 @@ SPLIT_MAP = {
     "m": "longmemeval_m_cleaned",
 }
 DATE_RE = re.compile(r"(\d{4}/\d{2}/\d{2}).*?(\d{2}:\d{2})")
+
+# Problem 3 — query specificity buckets (fixed mapping from question_type).
+SPECIFICITY_SPECIFIC = frozenset({
+    "knowledge-update",
+    "single-session-preference",
+    "single-session-user",
+    "single-session-assistant",
+})
+SPECIFICITY_OPEN = frozenset({
+    "temporal-reasoning",
+    "multi-session",
+})
+
+
+def specificity_bucket(question_type: str) -> str:
+    """Map LongMemEval question_type → specific | open | other."""
+    if question_type in SPECIFICITY_SPECIFIC:
+        return "specific"
+    if question_type in SPECIFICITY_OPEN:
+        return "open"
+    return "other"
+
+
+def sim_spread(sims: list[float]) -> float:
+    """max−min similarity among candidates (0 if < 2)."""
+    if len(sims) < 2:
+        return 0.0
+    return float(max(sims) - min(sims))
 
 
 def parse_lme_datetime(s: str) -> float:
@@ -213,16 +243,24 @@ def eval_all_systems(
     sim: EmbeddingSimilarity,
     top_k: int,
     systems: tuple[str, ...],
-) -> dict[str, tuple[bool, bool]]:
-    """Ingest once, score each retrieval policy (important for large S haystacks)."""
+) -> dict[str, tuple[bool, bool, float]]:
+    """Ingest once, score each retrieval policy (important for large S haystacks).
+
+    Returns system → (answer_hit, evidence_hit, sim_spread) where sim_spread is
+    max−min cosine among the top similarity pool used for plateau detection.
+    """
     q_now = parse_lme_datetime(instance["question_date"])
     namespace = f"lme_{instance['question_id']}_{id(instance)}"
     evidence = collect_evidence(instance)
 
-    out: dict[str, tuple[bool, bool]] = {}
+    out: dict[str, tuple[bool, bool, float]] = {}
     with MemoryLayer(":memory:", similarity_fn=sim) as mem:
         view = mem.for_user(namespace)
         ingest_instance(view, instance)
+        candidates = view._retrieve_candidates(instance["question"], None, top_k)
+        pool_n = max(top_k * view.candidate_multiplier, top_k, 2)
+        by_sim = sorted(candidates, key=lambda x: x[1], reverse=True)[:pool_n]
+        spread = sim_spread([s for _, s in by_sim])
         for system in systems:
             profile = (
                 system.replace("voltmem_", "")
@@ -237,6 +275,7 @@ def eval_all_systems(
             out[system] = (
                 answer_hit(recalled, instance["answer"]),
                 evidence_hit(recalled, evidence),
+                spread,
             )
     return out
 
@@ -287,6 +326,7 @@ def run(
     seed: int,
     per_type: int | None,
     systems: tuple[str, ...],
+    report_specificity: bool = True,
 ) -> None:
     label = {"oracle": "ORACLE", "s": "S (full haystack)", "m": "M (500 sessions)"}
     print("=" * 74)
@@ -309,37 +349,49 @@ def run(
         elif split == "m":
             print("  (M split is very large — use --limit or --per-type)\n")
 
-    stats = {s: {"answer": 0, "evidence": 0, "n": 0} for s in systems}
+    stats = {s: {"answer": 0, "evidence": 0, "n": 0, "spread_sum": 0.0}
+             for s in systems}
     by_type: dict[str, dict[str, dict[str, int]]] = defaultdict(
         lambda: {s: {"answer": 0, "evidence": 0, "n": 0} for s in systems})
+    by_spec: dict[str, dict[str, dict[str, float]]] = defaultdict(
+        lambda: {s: {"answer": 0, "evidence": 0, "n": 0, "spread_sum": 0.0}
+                 for s in systems})
 
     for i, inst in enumerate(instances):
         qtype = inst["question_type"]
+        bucket = specificity_bucket(qtype)
         ns, nt = haystack_stats(inst)
         if (i + 1) % 5 == 0 or i == 0:
             print(f"  [{i + 1}/{len(instances)}] {inst['question_id']} "
-                  f"({qtype}, {ns} sess / {nt} turns)")
+                  f"({qtype}/{bucket}, {ns} sess / {nt} turns)")
         scores = eval_all_systems(inst, sim, top_k, systems)
         for system in systems:
-            ah, eh = scores[system]
+            ah, eh, spread = scores[system]
             stats[system]["n"] += 1
             stats[system]["answer"] += int(ah)
             stats[system]["evidence"] += int(eh)
+            stats[system]["spread_sum"] += spread
             by_type[qtype][system]["n"] += 1
             by_type[qtype][system]["answer"] += int(ah)
             by_type[qtype][system]["evidence"] += int(eh)
+            by_spec[bucket][system]["n"] += 1
+            by_spec[bucket][system]["answer"] += int(ah)
+            by_spec[bucket][system]["evidence"] += int(eh)
+            by_spec[bucket][system]["spread_sum"] += spread
 
     def rate(num, den):
         return num / den if den else 0.0
 
     print("\n" + "-" * 74)
-    print(f"  {'system':<14}{'answer@'+str(top_k):>12}{'evidence@'+str(top_k):>14}")
-    print("  " + "-" * 40)
+    print(f"  {'system':<14}{'answer@'+str(top_k):>12}{'evidence@'+str(top_k):>14}"
+          f"{'avg_spread':>12}")
+    print("  " + "-" * 52)
     for s in systems:
         n = stats[s]["n"]
         print(f"  {s:<14}"
               f"{rate(stats[s]['answer'], n):>12.3f}"
-              f"{rate(stats[s]['evidence'], n):>14.3f}")
+              f"{rate(stats[s]['evidence'], n):>14.3f}"
+              f"{rate(stats[s]['spread_sum'], n):>12.3f}")
 
     print("\n  by question_type (answer hit rate):")
     types = sorted(by_type.keys())
@@ -352,6 +404,34 @@ def run(
             d = by_type[qt][s]
             row += f"{rate(d['answer'], d['n']):>14.3f}"
         print(row)
+
+    if report_specificity:
+        print("\n  by specificity (answer hit rate / avg sim spread):")
+        print(f"  specific types: {sorted(SPECIFICITY_SPECIFIC)}")
+        print(f"  open types:     {sorted(SPECIFICITY_OPEN)}")
+        buckets = [b for b in ("specific", "open", "other") if b in by_spec]
+        header = f"  {'bucket':<12}" + "".join(
+            f"{s + '_a':>12}{s + '_sp':>10}" for s in systems)
+        print(header)
+        print("  " + "-" * (12 + 22 * len(systems)))
+        for bucket in buckets:
+            row = f"  {bucket:<12}"
+            for s in systems:
+                d = by_spec[bucket][s]
+                n = d["n"]
+                row += f"{rate(d['answer'], n):>12.3f}"
+                row += f"{rate(d['spread_sum'], n):>10.3f}"
+            print(row)
+        if "voltmem_real" in systems and "similarity_only" in systems:
+            for bucket in ("specific", "open"):
+                if bucket not in by_spec:
+                    continue
+                ra = rate(by_spec[bucket]["voltmem_real"]["answer"],
+                          by_spec[bucket]["voltmem_real"]["n"])
+                sa = rate(by_spec[bucket]["similarity_only"]["answer"],
+                          by_spec[bucket]["similarity_only"]["n"])
+                delta = ra - sa
+                print(f"  {bucket}: voltmem_real − similarity_only = {delta:+.3f}")
 
     print("\n" + "-" * 74)
     print("VERDICT:")
@@ -431,12 +511,18 @@ def main():
     )
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--report-specificity", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Print specific vs open answer@k and avg sim spread (default: on)",
+    )
     args = ap.parse_args()
     per_type = 2 if args.quick else args.per_type
     limit = None if per_type else (15 if args.quick else args.limit)
     run(
         args.split, limit, args.top_k, args.seed, per_type,
         parse_systems(args.systems),
+        report_specificity=args.report_specificity,
     )
 
 
