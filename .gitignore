@@ -224,6 +224,7 @@ __marimo__/
 voltmem.db
 chat_app.db
 uv.lock
+experiments/out/
 docs/LAUNCH_POST.md
 docs/LAUNCH_POST_COPYPASTE.txt
 docs/DEVTO_POST.md

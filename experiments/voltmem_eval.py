@@ -212,6 +212,21 @@ def run_escalation(profile):
     return correct, n, rows
 
 
+def run_calibration_footprint():
+    """Replay Battery A probes into one layer; return domain_stats() telemetry."""
+    with volatility_profile("real"):
+        with MemoryLayer(":memory:") as mem:
+            for (domain, base, obs, mm, src, _expected, _note) in ESCALATION_PROBES:
+                mem.write(base, domain=domain)
+                mem.observe(obs, domain=domain, mismatch_magnitude=mm, source=src)
+            for (domain, base, steps, _note) in CUMULATIVE_ESCALATION_PROBES:
+                mem.write(base, domain=domain)
+                for obs, mm, src, _expected in steps:
+                    mem.observe(
+                        obs, domain=domain, mismatch_magnitude=mm, source=src)
+            return mem.domain_stats()
+
+
 # ── Battery B: freshness-aware retrieval ──────────────────────────────────────
 # Score identical-similarity memories that differ only in domain and age, then
 # check the ranking separates "still trustworthy" from "probably stale".
@@ -277,6 +292,14 @@ def main():
         flag = "ok " if ok else "XX "
         print(f"    [{flag}] {domain:20s} want={expected} got={got} "
               f"({action:14s}) {note}")
+
+    print("\n  prior calibration footprint (Battery A replay, real profile):")
+    print(f"  {'domain':<22}{'ins':>5}{'conf':>6}{'mm':>5}{'aud':>5}"
+          f"{'aud_rate':>10}{'prior':>8}")
+    for domain, row in sorted(run_calibration_footprint().items()):
+        print(f"  {domain:<22}{row['inserted']:>5}{row['confirmed']:>6}"
+              f"{row['logged_mismatch']:>5}{row['audited']:>5}"
+              f"{row['audit_rate']:>10.2f}{row['prior']:>8.2f}")
 
     # Battery B
     print("\nBATTERY B — FRESHNESS-AWARE RETRIEVAL")

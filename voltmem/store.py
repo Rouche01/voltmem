@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS domain_stats (
     n_confirms    INTEGER DEFAULT 0,
     n_mismatches  INTEGER DEFAULT 0,
     n_supersedes  INTEGER DEFAULT 0,
+    n_inserts     INTEGER DEFAULT 0,
     mismatch_sum  REAL    DEFAULT 0.0,
     PRIMARY KEY (namespace, domain)
 );
@@ -85,6 +86,13 @@ class MemoryStore:
             self._conn.execute(
                 "ALTER TABLE memories ADD COLUMN namespace "
                 "TEXT NOT NULL DEFAULT 'default'")
+        ds_cols = {
+            r[1] for r in self._conn.execute("PRAGMA table_info(domain_stats)")
+        }
+        if ds_cols and "n_inserts" not in ds_cols:
+            self._conn.execute(
+                "ALTER TABLE domain_stats ADD COLUMN n_inserts "
+                "INTEGER DEFAULT 0")
 
     # ── write ─────────────────────────────────────────────────────────────────
 
@@ -235,15 +243,16 @@ class MemoryStore:
         self._conn.execute("""
             INSERT INTO domain_stats (
                 namespace, domain, n_confirms, n_mismatches,
-                n_supersedes, mismatch_sum
+                n_supersedes, n_inserts, mismatch_sum
             ) VALUES (
                 :namespace, :domain, :n_confirms, :n_mismatches,
-                :n_supersedes, :mismatch_sum
+                :n_supersedes, :n_inserts, :mismatch_sum
             )
             ON CONFLICT(namespace, domain) DO UPDATE SET
                 n_confirms=:n_confirms,
                 n_mismatches=:n_mismatches,
                 n_supersedes=:n_supersedes,
+                n_inserts=:n_inserts,
                 mismatch_sum=:mismatch_sum
         """, row)
         self._conn.commit()

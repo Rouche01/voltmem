@@ -121,7 +121,9 @@ class MemoryLayer:
         self.goal_delta_default = goal_delta_default
         self.namespace = namespace
         self.auto_discover = auto_discover
-        self._tracker = VolatilityTracker(self._store) if auto_discover else None
+        # Always track write-path actions for prior calibration telemetry;
+        # auto_discover only controls whether empirical V_d is blended at score time.
+        self._tracker = VolatilityTracker(self._store)
         self._similarity_fn = similarity_fn or self._similarity
         self._embed_fn = embed_fn
         self.candidate_multiplier = max(1, candidate_multiplier)
@@ -202,6 +204,7 @@ class MemoryLayer:
         )
         self._store.insert(item)
         self._index_upsert(item)
+        self._record_domain_observation("inserted", domain)
         return WriteResult(action="inserted", item=item)
 
     # ── primary observe path ──────────────────────────────────────────────────
@@ -512,16 +515,39 @@ class MemoryLayer:
             "age_days": round((now - item.created_at) / 86400, 2),
             "days_since_confirmed": round((now - item.last_confirmed_at) / 86400, 2),
         }
-        if self._tracker is not None:
-            stats = self._tracker.get_stats(self.namespace, item.domain)
-            if stats is not None:
-                out["domain_stats"] = {
-                    "empirical_volatility": round(stats.empirical_volatility, 4),
-                    "n_confirms": stats.n_confirms,
-                    "n_mismatches": stats.n_mismatches,
-                    "n_supersedes": stats.n_supersedes,
-                }
+        stats = self._tracker.get_stats(self.namespace, item.domain)
+        if stats is not None:
+            out["domain_stats"] = {
+                "empirical_volatility": round(stats.empirical_volatility, 4),
+                "n_confirms": stats.n_confirms,
+                "n_mismatches": stats.n_mismatches,
+                "n_supersedes": stats.n_supersedes,
+                "n_inserts": stats.n_inserts,
+            }
         return out
+
+    def domain_stats(self) -> dict[str, dict]:
+        """
+        Prior-calibration telemetry: per-domain write-path action counts and rates.
+
+        Returns a dict suitable for histograms / ops dashboards, e.g.::
+
+            {
+              "location": {
+                "prior": 0.6,
+                "inserted": 3,
+                "confirmed": 10,
+                "logged_mismatch": 2,
+                "audited": 4,
+                "audit_rate": 0.25,
+                ...
+              },
+            }
+
+        Always available (does not require ``auto_discover=True``). Use audit_rate
+        and mismatch_rate to spot stubborn vs twitchy domain priors.
+        """
+        return self._tracker.telemetry(self.namespace)
 
     def summary(self) -> dict:
         """High-level summary of the memory store for this namespace."""
@@ -534,16 +560,15 @@ class MemoryLayer:
             "total_active_memories": len(all_items),
             "by_domain": by_domain,
             "auto_discover": self.auto_discover,
-            "domain_discovery": (
-                self._tracker.summary(self.namespace) if self._tracker else {}
-            ),
+            "domain_discovery": self._tracker.summary(self.namespace),
+            "domain_stats": self.domain_stats(),
         }
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _resolve_item_for_scoring(self, item: MemoryItem) -> MemoryItem:
         """Apply learned domain volatility when auto_discover is enabled."""
-        if self._tracker is None:
+        if not self.auto_discover:
             return item
         resolved = self._tracker.resolve_volatility(
             self.namespace, item.domain, item.volatility_ema)
@@ -560,8 +585,6 @@ class MemoryLayer:
     def _record_domain_observation(
         self, action: str, domain: str, mismatch: float = 0.0
     ) -> None:
-        if self._tracker is None:
-            return
         self._tracker.record(self.namespace, domain, action, mismatch)
 
     def _retrieve_candidates(

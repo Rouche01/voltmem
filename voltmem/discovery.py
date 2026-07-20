@@ -1,9 +1,9 @@
 """
-Domain auto-discovery — observation-based volatility learning.
+Domain observation tracking — prior calibration telemetry + optional auto-discovery.
 
-Tracks confirm / mismatch / supersede rates per (namespace, domain) and
-blends empirical volatility estimates with hand-tuned priors.  Enabled via
-``MemoryLayer(..., auto_discover=True)`` or ``create_memory(..., auto_discover=True)``.
+Always records confirm / mismatch / audit / insert counts per (namespace, domain)
+for ``MemoryLayer.domain_stats()``. When ``auto_discover=True``, also blends
+empirical volatility estimates with hand-tuned priors at scoring time.
 """
 
 from __future__ import annotations
@@ -25,10 +25,12 @@ class DomainStats:
     n_confirms: int = 0
     n_mismatches: int = 0
     n_supersedes: int = 0
+    n_inserts: int = 0
     mismatch_sum: float = 0.0
 
     @property
     def total(self) -> int:
+        """Escalation-relevant events (excludes cold inserts)."""
         return self.n_confirms + self.n_mismatches + self.n_supersedes
 
     @property
@@ -56,6 +58,8 @@ class DomainStats:
         elif action == "audited":
             self.n_supersedes += 1
             self.mismatch_sum += max(0.0, mismatch)
+        elif action == "inserted":
+            self.n_inserts += 1
 
     def to_row(self, namespace: str) -> dict:
         return {
@@ -64,6 +68,7 @@ class DomainStats:
             "n_confirms": self.n_confirms,
             "n_mismatches": self.n_mismatches,
             "n_supersedes": self.n_supersedes,
+            "n_inserts": self.n_inserts,
             "mismatch_sum": self.mismatch_sum,
         }
 
@@ -74,8 +79,31 @@ class DomainStats:
             n_confirms=int(row["n_confirms"]),
             n_mismatches=int(row["n_mismatches"]),
             n_supersedes=int(row["n_supersedes"]),
+            n_inserts=int(row.get("n_inserts") or 0),
             mismatch_sum=float(row["mismatch_sum"]),
         )
+
+    def as_telemetry(self, prior: float) -> dict:
+        """Public calibration row: counts + rates for stubborn vs twitchy priors."""
+        decisions = self.total
+        return {
+            "prior": prior,
+            "inserted": self.n_inserts,
+            "confirmed": self.n_confirms,
+            "logged_mismatch": self.n_mismatches,
+            "audited": self.n_supersedes,
+            "decisions": decisions,
+            "audit_rate": (
+                self.n_supersedes / decisions if decisions else 0.0
+            ),
+            "mismatch_rate": (
+                self.n_mismatches / decisions if decisions else 0.0
+            ),
+            "confirm_rate": (
+                self.n_confirms / decisions if decisions else 0.0
+            ),
+            "empirical_volatility": round(self.empirical_volatility, 4),
+        }
 
 
 def blend_volatility(prior: float, empirical: float, n_observations: int) -> float:
@@ -147,8 +175,17 @@ class VolatilityTracker:
                 "n_confirms": stats.n_confirms,
                 "n_mismatches": stats.n_mismatches,
                 "n_supersedes": stats.n_supersedes,
+                "n_inserts": stats.n_inserts,
                 "total": stats.total,
             }
+        return out
+
+    def telemetry(self, namespace: str) -> dict[str, dict]:
+        """Per-domain calibration table for prior / audit-threshold health."""
+        out: dict[str, dict] = {}
+        for domain, stats in self.all_stats(namespace).items():
+            prior = DOMAIN_VOLATILITY.get(domain, 0.5)
+            out[domain] = stats.as_telemetry(prior)
         return out
 
     def clear_namespace(self, namespace: str) -> None:

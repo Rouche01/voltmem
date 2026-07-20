@@ -87,10 +87,59 @@ def test_auto_discover_persists_across_sessions():
 def test_auto_discover_off_by_default():
     with MemoryLayer(":memory:") as mem:
         assert mem.auto_discover is False
-        assert mem._tracker is None
+        assert mem._tracker is not None  # telemetry always on
         mem.write("I live in Berlin", domain="location")
-        summary = mem.summary()
-        assert summary["domain_discovery"] == {}
+        stats = mem.domain_stats()
+        assert stats["location"]["inserted"] == 1
+        assert stats["location"]["audited"] == 0
+
+
+def test_domain_stats_telemetry_counts_actions():
+    """Prior calibration API: inserts / confirms / mismatches / audits."""
+    with MemoryLayer(":memory:") as mem:
+        mem.write("I live in Berlin", domain="location")
+        mem.observe(
+            "I live in Berlin",
+            domain="location",
+            mismatch_magnitude=0.05,
+            source="explicit_statement",
+        )
+        # Weak blip should log mismatch without auditing on a confirmed fact.
+        mem.observe(
+            "Maybe I'm moving?",
+            domain="location",
+            mismatch_magnitude=0.45,
+            source="weak_inference",
+        )
+        # Fresh volatile domain + strong explicit contradiction → audit.
+        mem.write("Working on taxes", domain="current_task")
+        audited = mem.observe(
+            "Actually finished taxes; now packing",
+            domain="current_task",
+            mismatch_magnitude=0.95,
+            source="explicit_statement",
+        )
+        assert audited.action == "audited"
+        loc = mem.domain_stats()["location"]
+        task = mem.domain_stats()["current_task"]
+        assert loc["inserted"] == 1
+        assert loc["confirmed"] >= 1
+        assert loc["logged_mismatch"] >= 1
+        assert task["audited"] >= 1
+        assert loc["decisions"] == (
+            loc["confirmed"] + loc["logged_mismatch"] + loc["audited"]
+        )
+        assert 0.0 <= loc["audit_rate"] <= 1.0
+        assert "prior" in loc
+
+
+def test_create_memory_domain_stats():
+    from voltmem import create_memory
+
+    with create_memory(":memory:", embeddings=False) as mem:
+        mem.add("I prefer concise answers")
+        stats = mem.domain_stats()
+        assert any(v["inserted"] >= 1 for v in stats.values())
 
 
 def test_weak_inference_does_not_supersede_stable_with_auto_discover():
@@ -127,6 +176,8 @@ if __name__ == "__main__":
         test_auto_discover_records_observations,
         test_auto_discover_persists_across_sessions,
         test_auto_discover_off_by_default,
+        test_domain_stats_telemetry_counts_actions,
+        test_create_memory_domain_stats,
         test_weak_inference_does_not_supersede_stable_with_auto_discover,
         test_create_memory_auto_discover_flag,
     ]

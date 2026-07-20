@@ -84,8 +84,9 @@ def create_memory(
         ``auto`` (sqlite index when embedder present), ``sqlite``, ``brute``,
         or ``off`` for full-scan retrieval.
     auto_discover : bool
-        When True, learn per-domain volatility from confirm/mismatch/supersede
-        patterns and blend with hand-tuned priors (prior-anchored EMA).
+        When True, blend empirical per-domain volatility (from tracked
+        confirm/mismatch/audit rates) into scoring. Write-path telemetry via
+        ``domain_stats()`` is always recorded regardless of this flag.
     llm_extract : bool
         Deprecated — use ``fact_extractor="llm"``.
     llm_domain : bool
@@ -253,6 +254,10 @@ class Memory:
 
     def summary(self) -> dict[str, Any]:
         return self._layer.summary()
+
+    def domain_stats(self) -> dict[str, dict]:
+        """Per-domain prior-calibration telemetry (audit / mismatch / confirm rates)."""
+        return self._layer.domain_stats()
 
     def close(self) -> None:
         if self._owns_layer:

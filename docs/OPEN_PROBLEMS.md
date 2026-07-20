@@ -419,37 +419,42 @@ evidence.
 A simple **histogram (or table) of audit / mismatch / confirm counts per domain**
 answers the commenter’s ask and pairs well with the REAL > SHUFFLE > SWAP causal story.
 
-### What exists today
+### What exists today (Jul 2026)
 
 | Mechanism | Notes |
 |---|---|
 | Per-item `mismatch_count` | Cumulative below-threshold mismatches on that item |
-| Actions | `confirmed`, `audited`, `logged_mismatch`, `inserted`, … |
-| `VolatilityTracker` (`auto_discover=True`) | Blends empirical volatility with priors; not a reporting API |
-| `calibrate_escalation.py` | Offline θ-band calibration; not production telemetry |
-
-No first-class export of **per-domain** audit-fire rates from live or logged traffic.
-
-### Suggested design
-
-- [ ] **Counters per domain** — `audited`, `logged_mismatch`, `confirmed`, `inserted`
-  (and optionally mismatch magnitude buckets)
-- [ ] **Export API** — e.g. `mem.domain_stats()` → table/JSON suitable for a histogram
-- [ ] **Optional log sink** — append-only events for offline analysis without holding
-  state in the hot path
-- [ ] **Docs / notebook** — how to read “stubborn vs twitchy” priors from the chart
-- [ ] **Eval hook** — print the same table after `voltmem_eval` / LongMemEval runs so
-  synthetic benches leave a calibration footprint
-
-Sketch:
+| Always-on `VolatilityTracker` | Records insert / confirm / mismatch / audit per domain |
+| `MemoryLayer.domain_stats()` / `Memory.domain_stats()` | Public calibration table + rates |
+| `auto_discover=True` | Optional blend of empirical \(V_d\) into scoring (separate from telemetry) |
+| `calibrate_escalation.py` | Offline θ-band calibration |
+| Eval footprint | `experiments/voltmem_eval.py` prints Battery A domain_stats replay |
 
 ```python
 stats = mem.domain_stats()
 # {
-#   "location": {"audited": 42, "logged_mismatch": 11, "confirmed": 80, ...},
-#   "biographical": {"audited": 1, "logged_mismatch": 9, "confirmed": 120, ...},
+#   "location": {
+#     "prior": 0.6, "inserted": 3, "confirmed": 10,
+#     "logged_mismatch": 2, "audited": 4,
+#     "audit_rate": 0.25, "mismatch_rate": 0.125, ...
+#   },
 # }
 ```
+
+**How to read:** high `audit_rate` on stable domains (e.g. biographical) → prior/threshold
+too permissive; near-zero `audit_rate` on volatile domains despite mismatches → too
+conservative. Pair with REAL > SHUFFLE > SWAP causal benches.
+
+### Suggested design
+
+- [x] **Counters per domain** — `audited`, `logged_mismatch`, `confirmed`, `inserted`
+- [x] **Export API** — `mem.domain_stats()` → JSON-ready table with rates
+- [ ] **Optional log sink** — append-only events for offline analysis without holding
+  state in the hot path
+- [x] **Docs** — reading guide above + OPEN_PROBLEMS / RESEARCH pointers
+- [x] **Eval hook** — Battery A calibration footprint in `voltmem_eval.py`
+- [x] **Histogram script** — `experiments/prior_calibration_hist.py` (ASCII + SVG; optional PNG)
+- [ ] **Mismatch magnitude buckets** — optional finer histogram
 
 ### What this does not fix
 
@@ -461,8 +466,7 @@ stats = mem.domain_stats()
 
 ### Priority
 
-P2 — high leverage, relatively cheap; strengthens scientific and production confidence
-in priors before large classifier or multimodal work.
+P2 — **shipped** for counters + `domain_stats()`; log sink / magnitude buckets remain optional.
 
 ---
 
@@ -509,7 +513,7 @@ Fixing one without the others is incomplete:
 | P1 | High-M explicit override (drift-safe) | Done — `explicit_theta_cap()` + `calibrate_escalation.py` |
 | P1 | Expand escalation eval + CI | Done — below/medium-band + cumulative probes |
 | P2 | Classification eval corpus | Measure Problem 1; needed before LLM classifier work |
-| P2 | Prior calibration telemetry | Per-domain audit/mismatch/confirm rates; validate priors |
+| P2 | Prior calibration telemetry | Done — `domain_stats()` always on; optional log sink later |
 | P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
 | P2 | Multi-facet `event_id` + multi-write (Problem 4) | Enabling API for non-chat agents; core math unchanged |
 | P2 | Optional TTL hybrid (`expires_at`) | App-defined lifetimes; complements volatility staleness |

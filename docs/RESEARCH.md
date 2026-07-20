@@ -86,8 +86,12 @@ See [paper/findings.md](../paper/findings.md) for full tables and limits. Highli
 ```bash
 pip install -e ".[embeddings]"
 
-# end-to-end library (real / flat / swap)
+# end-to-end library (real / flat / swap; prints domain_stats footprint)
 python experiments/voltmem_eval.py
+
+# prior calibration histogram (ASCII + SVG under experiments/out/)
+python experiments/prior_calibration_hist.py
+# python experiments/prior_calibration_hist.py --png   # needs matplotlib
 
 # agent memory vs naive policies
 python experiments/llm_memory_bench.py
