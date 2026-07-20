@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
@@ -17,6 +17,15 @@ volatile memories rank lower at search time.
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
 **Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md)
+
+### What’s new in 0.2.2
+
+- **Adaptive freshness mix** — when top candidates have nearly equal similarity
+  (under-specified queries), VoltMem dampens the volatility penalty so freshness
+  cannot dominate near-ties; clear similarity gaps keep full freshness behavior
+- **`domain_stats()`** — always-on prior calibration telemetry (insert / confirm /
+  mismatch / audit counts and rates per domain); does not require `auto_discover`
+- **Calibration histogram** — `experiments/prior_calibration_hist.py` (ASCII + SVG)
 
 ---
 
@@ -74,7 +83,8 @@ system = f"What you know about this user:\n{context}"
 |---|---|
 | `create_memory(db, user_id)` | Factory with auto-detected embeddings + vector index |
 | `Memory.add(text \| messages)` | Store a fact; slot-aware linking updates related memories |
-| `Memory.search(query, limit=5)` | ANN candidates + volatility re-rank (relevance + freshness) |
+| `Memory.search(query, limit=5)` | ANN candidates + volatility re-rank (relevance + freshness; adaptive mix on similarity plateaus) |
+| `Memory.domain_stats()` | Per-domain prior calibration telemetry (audit / mismatch / confirm rates) |
 | `Memory.get_all()` | All active memories for this user |
 | `Memory.delete(id)` | Remove one memory |
 | `Memory.clear()` | Wipe user namespace |
@@ -85,12 +95,24 @@ Advanced: `mem.layer` exposes `MemoryLayer` for low-level `observe()` / `write()
 embedder is present (`"off"` restores full-scan retrieval). VoltMem always applies
 volatility re-ranking on top of vector candidates — not raw ANN results.
 
+```python
+stats = mem.domain_stats()
+# {
+#   "location": {"prior": 0.6, "audited": 4, "logged_mismatch": 2,
+#                "confirmed": 10, "audit_rate": 0.25, ...},
+# }
+```
+
 ```mermaid
 flowchart LR
   Q[search query] --> E[embed query]
   E --> V[vector index: top candidates]
   V --> S[SQLite: load memory records]
-  S --> R[volatility re-rank → current truth]
+  S --> P{sim spread flat?}
+  P -->|no| R[full freshness re-rank]
+  P -->|yes| D[dampen freshness mix]
+  R --> T[current truth]
+  D --> T
 ```
 
 ---
@@ -205,7 +227,9 @@ bob   = create_memory("app.db", user_id="bob")
 | `examples/contradiction_demo.py` | VoltMem vs always-add on contradictions |
 | `experiments/mem0_comparison.py` | 3-scenario head-to-head vs always-add |
 | `experiments/mem0_side_by_side.py` | 3-scenario head-to-head vs real Mem0 (3/3 wedge) |
-| `experiments/voltmem_eval.py` | End-to-end escalation + retrieval (20/20 probes, real > flat > swap) |
+| `experiments/voltmem_eval.py` | End-to-end escalation + retrieval (20/20 probes, real > flat > swap) + domain_stats footprint |
+| `experiments/prior_calibration_hist.py` | ASCII + SVG histogram of audit_rate by domain (Battery A replay) |
+| `experiments/retrieval_plateau_probe.py` | Synthetic Problem 3 plateau / clear-gap check |
 | `experiments/calibrate_escalation.py` | Print E_t vs θ table for tuning explicit-override constants |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
 | `examples/multi_tenant.py` | One DB, many users |
@@ -242,8 +266,9 @@ Slash commands: `/memories`, `/search <query>`, `/clear`, `/reset`, `/help`.
 Custom domains: register via ``DomainRegistry`` and pass to ``create_memory(domains=...)``.
 Pluggable classifiers: ``create_memory(classifier=...)`` — ``"heuristic"``, ``"llm"``, ``KeywordClassifier``, or a callable dict.
 
-Optional: ``create_memory(..., auto_discover=True)`` learns per-domain volatility from
-confirm / mismatch / supersede patterns (blended with priors above; cold-start applies).
+``mem.domain_stats()`` always records insert / confirm / mismatch / audit rates per
+domain (prior calibration). Optional: ``create_memory(..., auto_discover=True)`` also
+*blends* empirical volatility into scoring from those patterns (cold-start applies).
 
 ```python
 from voltmem import create_memory, DomainRegistry, KeywordClassifier, ChainedClassifier, HeuristicClassifier
@@ -281,6 +306,11 @@ python tests/test_client.py
 
 Experiments and benchmarks live in `experiments/` — see [docs/RESEARCH.md](docs/RESEARCH.md).
 Open problems and roadmap: [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md).
+
+```bash
+python experiments/prior_calibration_hist.py   # ASCII + experiments/out/*.svg
+python experiments/retrieval_plateau_probe.py
+```
 
 ---
 
