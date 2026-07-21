@@ -20,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: pip install -e ".[embeddings]"
+        run: pip install -e ".[embeddings,sidecar]"
 
       - name: Run core tests
         run: python tests/test_voltmem.py
@@ -30,6 +30,11 @@ jobs:
 
       - name: Run client tests
         run: python tests/test_client.py
+
+      - name: Run sidecar tests
+        env:
+          VOLTMEM_EMBEDDINGS: "0"
+        run: python tests/test_sidecar.py
 
       - name: Run vector index tests
         run: python tests/test_vector_index.py
