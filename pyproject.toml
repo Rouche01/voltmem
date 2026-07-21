@@ -25,7 +25,14 @@ dependencies = []
 [project.optional-dependencies]
 embeddings = ["sentence-transformers>=3.0"]
 langchain = ["langchain-core>=0.3.0", "langchain>=0.3.0"]
-all = ["sentence-transformers>=3.0", "langchain-core>=0.3.0", "langchain>=0.3.0"]
+sidecar = ["fastapi>=0.115", "uvicorn[standard]>=0.32"]
+all = [
+    "sentence-transformers>=3.0",
+    "langchain-core>=0.3.0",
+    "langchain>=0.3.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
 
 [project.urls]
 Homepage = "https://github.com/Rouche01/voltmem"
@@ -34,4 +41,4 @@ Issues = "https://github.com/Rouche01/voltmem/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["voltmem*"]
+include = ["voltmem*", "sidecar*"]
