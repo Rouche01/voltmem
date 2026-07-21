@@ -1,0 +1,23 @@
+# Build context exclusions for the VoltMem sidecar image
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+dist
+build
+experiments
+paper
+docs
+examples
+tests
+clients
+*.db
+.env
+.DS_Store

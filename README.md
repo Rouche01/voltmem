@@ -39,6 +39,7 @@ pip install voltmem[embeddings]
 
 Core library has **zero required dependencies**. Embeddings extras pull in
 `sentence-transformers` (recommended). LangChain: `pip install -e ".[langchain]"`.
+HTTP sidecar (FastAPI): `pip install -e ".[sidecar]"` — see [sidecar/README.md](sidecar/README.md).
 
 ---
 
@@ -217,6 +218,21 @@ One SQLite file, many users — `user_id` maps to an isolated namespace:
 alice = create_memory("app.db", user_id="alice")
 bob   = create_memory("app.db", user_id="bob")
 ```
+
+### HTTP sidecar / TypeScript
+
+For Cloudflare Workers and other TypeScript apps, run VoltMem as an HTTP sidecar
+instead of porting the engine. The Worker stays thin and calls REST
+(`add` / `search` / `domain_stats`).
+
+```bash
+pip install -e ".[sidecar,embeddings]"
+VOLTMEM_API_KEY=secret VOLTMEM_DB_PATH=./voltmem_sidecar.db python -m sidecar
+# Docker: docker build -t voltmem-sidecar . && docker run -p 8080:8080 -e VOLTMEM_API_KEY=secret -v voltmem-data:/data voltmem-sidecar
+```
+
+Full routes, env vars, and curl examples: [sidecar/README.md](sidecar/README.md).
+A Workers-safe `@voltmem/client` TypeScript SDK is planned under `clients/typescript`.
 
 ---
 
