@@ -21,4 +21,4 @@ TypeScript / Cloudflare Workers apps talk to VoltMem over HTTP — do not port t
 
 Flow: **Worker → `@voltmem/client` → sidecar → `create_memory`** (`add` / `search` / `domain_stats`). First dogfood target: **stylens-lite-api**.
 
-Related: [OPEN_PROBLEMS.md](../OPEN_PROBLEMS.md) · [RESEARCH.md](../RESEARCH.md)
+Related: [OPEN_PROBLEMS.md](../OPEN_PROBLEMS.md) · [RESEARCH.md](../RESEARCH.md) · [SIDECAR.md](../SIDECAR.md) (deploy Docker sidecar)

@@ -225,14 +225,20 @@ For Cloudflare Workers and other TypeScript apps, run VoltMem as an HTTP sidecar
 instead of porting the engine. The Worker stays thin and calls REST
 (`add` / `search` / `domain_stats`).
 
+**Consumer deploy guide:** [docs/SIDECAR.md](docs/SIDECAR.md) — Docker pull/build, production checklist, Fly.io, connecting `@voltmem/client`.
+
 ```bash
+# Anyone can build the public Dockerfile
+git clone https://github.com/Rouche01/voltmem.git && cd voltmem
+docker build -t voltmem-sidecar .
+docker run -p 8080:8080 -e VOLTMEM_API_KEY=secret -v voltmem-data:/data voltmem-sidecar
+
+# Or run without Docker
 pip install -e ".[sidecar,embeddings]"
 VOLTMEM_API_KEY=secret VOLTMEM_DB_PATH=./voltmem_sidecar.db python -m sidecar
-# Docker: docker build -t voltmem-sidecar . && docker run -p 8080:8080 -e VOLTMEM_API_KEY=secret -v voltmem-data:/data voltmem-sidecar
 ```
 
-Full routes, env vars, and curl examples: [sidecar/README.md](sidecar/README.md).
-A Workers-safe `@voltmem/client` TypeScript SDK: [clients/typescript](clients/typescript).
+API reference: [sidecar/README.md](sidecar/README.md) · TypeScript SDK: [clients/typescript](clients/typescript).
 
 ---
 

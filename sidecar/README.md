@@ -2,12 +2,31 @@
 
 HTTP surface over [`create_memory`](../voltmem/client.py) for TypeScript / Cloudflare
 Workers and other non-Python clients. The engine stays Python; callers use REST
-(or the upcoming `@voltmem/client` SDK).
+or [`@voltmem/client`](../clients/typescript).
+
+**Deploy guide (start here):** [docs/SIDECAR.md](../docs/SIDECAR.md)
 
 Default domain profile: **stylens** (stable style prefs vs volatile occasion) —
 same priors as [`examples/custom_classifier.py`](../examples/custom_classifier.py).
 
-## Install & run (local)
+## Quick start
+
+### Docker (anyone)
+
+```bash
+# Build from this repo's Dockerfile
+git clone https://github.com/Rouche01/voltmem.git && cd voltmem
+docker build -t voltmem-sidecar .
+docker run --rm -p 8080:8080 \
+  -e VOLTMEM_API_KEY=dev-secret \
+  -v voltmem-data:/data \
+  voltmem-sidecar
+
+# Or pull a release image (after GHCR publish):
+# docker pull ghcr.io/rouche01/voltmem-sidecar:latest
+```
+
+### Local Python
 
 ```bash
 pip install -e ".[sidecar]"
@@ -27,7 +46,7 @@ python -m sidecar
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use a volume in Docker) |
+| `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use `/data/voltmem.db` in Docker) |
 | `VOLTMEM_EMBEDDINGS` | `1` (truthy) | `0`/`false` disables embedder (hashing fallback) |
 | `VOLTMEM_API_KEY` | _(empty)_ | When set, require matching `X-API-Key` on `/v1/*` |
 | `VOLTMEM_PROFILE` | `stylens` | Domain registry + classifier profile |
@@ -77,29 +96,12 @@ curl -s "http://127.0.0.1:8080/v1/users/alice/domain_stats" \
 
 ## TypeScript client
 
-Workers-safe SDK (global `fetch`, zero runtime deps):
-
 ```bash
-cd clients/typescript && npm install && npm run build
-# in your app: "@voltmem/client": "file:../voltmem/clients/typescript"
+npm install @voltmem/client
+# or from this repo: cd clients/typescript && npm install && npm run build
 ```
 
 See [clients/typescript/README.md](../clients/typescript/README.md).
-
-## Docker
-
-From the repo root:
-
-```bash
-docker build -t voltmem-sidecar .
-docker run --rm -p 8080:8080 \
-  -e VOLTMEM_API_KEY=dev-secret \
-  -v voltmem-data:/data \
-  voltmem-sidecar
-```
-
-Image installs `.[sidecar,embeddings]`, stores the DB at `/data/voltmem.db`, and
-exposes port **8080**. First start may take longer while the embedding model loads.
 
 ## Multi-tenant
 
