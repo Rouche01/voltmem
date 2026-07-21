@@ -9,4 +9,16 @@ Roadmap canvas: reframe, open-problem aims, competitors, synthetic stress tests,
 - **Open:** [voltmem-direction](/Users/richardemate/.cursor/projects/Users-richardemate-Projects-voltmem/canvases/voltmem-direction.canvas.tsx)
 - Or: Command Palette → **Open Canvas**
 
+### Dogfood integration path (shipped in-repo)
+
+TypeScript / Cloudflare Workers apps talk to VoltMem over HTTP — do not port the engine:
+
+| Piece | Location |
+|---|---|
+| FastAPI sidecar | [sidecar/](../../sidecar/) · [sidecar/README.md](../../sidecar/README.md) |
+| `@voltmem/client` | [clients/typescript/](../../clients/typescript/) |
+| Docker image | [Dockerfile](../../Dockerfile) |
+
+Flow: **Worker → `@voltmem/client` → sidecar → `create_memory`** (`add` / `search` / `domain_stats`). First dogfood target: **stylens-lite-api**.
+
 Related: [OPEN_PROBLEMS.md](../OPEN_PROBLEMS.md) · [RESEARCH.md](../RESEARCH.md)
