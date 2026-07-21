@@ -232,7 +232,7 @@ VOLTMEM_API_KEY=secret VOLTMEM_DB_PATH=./voltmem_sidecar.db python -m sidecar
 ```
 
 Full routes, env vars, and curl examples: [sidecar/README.md](sidecar/README.md).
-A Workers-safe `@voltmem/client` TypeScript SDK is planned under `clients/typescript`.
+A Workers-safe `@voltmem/client` TypeScript SDK: [clients/typescript](clients/typescript).
 
 ---
 

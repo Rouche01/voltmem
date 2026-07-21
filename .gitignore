@@ -1,5 +1,5 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
+# Node / local tooling
+node_modules/
 *.py[codz]
 *$py.class
 

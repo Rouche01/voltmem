@@ -53,3 +53,21 @@ jobs:
 
       - name: Mem0-style comparison smoke test
         run: python experiments/mem0_comparison.py
+
+  typescript-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/typescript
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and test @voltmem/client
+        run: |
+          npm install
+          npm test

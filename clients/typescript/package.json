@@ -1,0 +1,40 @@
+{
+  "name": "@voltmem/client",
+  "version": "0.1.0",
+  "description": "Workers-safe TypeScript client for the VoltMem HTTP sidecar",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test dist/client.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "voltmem",
+    "memory",
+    "llm",
+    "cloudflare-workers",
+    "typescript"
+  ]
+}

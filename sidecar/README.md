@@ -75,6 +75,17 @@ curl -s "http://127.0.0.1:8080/v1/users/alice/domain_stats" \
   -H "X-API-Key: $VOLTMEM_API_KEY"
 ```
 
+## TypeScript client
+
+Workers-safe SDK (global `fetch`, zero runtime deps):
+
+```bash
+cd clients/typescript && npm install && npm run build
+# in your app: "@voltmem/client": "file:../voltmem/clients/typescript"
+```
+
+See [clients/typescript/README.md](../clients/typescript/README.md).
+
 ## Docker
 
 From the repo root:
