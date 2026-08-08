@@ -228,6 +228,7 @@ class MemoryLayer:
         event_id: str | None = None,
         modality: str | None = None,
         expires_at: float | None = None,
+        force_update: bool = False,
     ) -> WriteResult:
         """
         Present a new observation to the memory layer.
@@ -261,6 +262,10 @@ class MemoryLayer:
             Kind of content (text / image / audio / sensor / structured).
         expires_at : float | None
             Unix timestamp when this fact becomes invalid (optional TTL).
+        force_update : bool
+            When True, bypass escalation math and always audit/supersede.
+            Intended for maintenance-driven reorganizations that have already
+            done their own threshold checking. Use with care.
         """
         gd = goal_delta if goal_delta is not None else self.goal_delta_default
         ld = load if load is not None else self.load
@@ -287,8 +292,11 @@ class MemoryLayer:
         #    blip overwrites an otherwise-stable fact.
         # Cap θ / cumulative overrides live in escalation_decision — do not
         # compare raw E_t > theta_t here or medium-stable domains stay stuck.
-        escalate, E_t, theta_t = escalation_decision(
-            scoring_item, mismatch_magnitude, source, gd, ld)
+        if force_update:
+            escalate, E_t, theta_t = True, 1.0, 0.0
+        else:
+            escalate, E_t, theta_t = escalation_decision(
+                scoring_item, mismatch_magnitude, source, gd, ld)
 
         # ── now fold this observation into the volatility EMA (reliability-
         #    weighted, single update). Future decisions benefit from the learned
@@ -298,7 +306,7 @@ class MemoryLayer:
 
         now = at_time if at_time is not None else time.time()
 
-        if mismatch_magnitude < 0.15:
+        if not force_update and mismatch_magnitude < 0.15:
             # low mismatch: this is a confirmation, not a conflict
             candidate.repetition_count += 1
             candidate.last_confirmed_at = now
@@ -339,8 +347,8 @@ class MemoryLayer:
             repetition_count=1,
             volatility_ema=candidate.volatility_ema,  # carry forward EMA
             goal_delta=gd,
-            event_id=event_id,
-            modality=modality,
+            event_id=event_id if event_id is not None else candidate.event_id,
+            modality=modality if modality is not None else candidate.modality,
             expires_at=expires_at,
             created_at=now,
             last_confirmed_at=now,

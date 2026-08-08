@@ -8,6 +8,15 @@ export type Message = {
 /** String fact, one chat message, or a list of messages (extractable). */
 export type AddData = string | Message | Message[];
 
+/** Facet for multi-facet event storage. */
+export type Facet = {
+  content: string;
+  domain: string;
+  modality?: string;
+  ttl_seconds?: number;
+  expires_at?: number;
+};
+
 export type WriteResult = {
   id: string;
   memory: string;
@@ -23,6 +32,9 @@ export type MemoryItem = {
   source: string;
   created_at: number;
   last_confirmed_at: number;
+  event_id?: string;
+  modality?: string;
+  expires_at?: number;
 };
 
 export type MemoryHit = MemoryItem & {
@@ -57,6 +69,15 @@ export type AddOptions = {
   source?: string;
   extract?: boolean;
   userId?: string;
+  event_id?: string;
+  modality?: string;
+  expires_at?: number;
+  ttl_seconds?: number;
+};
+
+export type AddEventOptions = {
+  source?: string;
+  userId?: string;
 };
 
 export type SearchOptions = {
@@ -66,5 +87,11 @@ export type SearchOptions = {
 };
 
 export type UserOptions = {
+  userId?: string;
+};
+
+export type MaintenanceTriggerOptions = {
+  task?: string;
+  dry_run?: boolean;
   userId?: string;
 };

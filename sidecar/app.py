@@ -20,6 +20,21 @@ class AddBody(BaseModel):
     data: AddData
     source: str = "explicit_statement"
     extract: bool | None = None
+    event_id: str | None = None
+    modality: str | None = None
+    expires_at: float | None = None
+    ttl_seconds: float | None = None
+
+
+class AddEventBody(BaseModel):
+    event_id: str
+    facets: list[dict[str, Any]]
+    source: str = "explicit_statement"
+
+
+class MaintenanceTriggerBody(BaseModel):
+    task: str | None = None
+    dry_run: bool = True
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -75,7 +90,37 @@ def create_app() -> FastAPI:
         kwargs: dict[str, Any] = {"source": body.source}
         if body.extract is not None:
             kwargs["extract"] = body.extract
+        # Pass event_id / modality / expires_at when present
+        if body.event_id is not None:
+            kwargs["event_id"] = body.event_id
+        if body.modality is not None:
+            kwargs["modality"] = body.modality
+        if body.expires_at is not None:
+            kwargs["expires_at"] = body.expires_at
+        if body.ttl_seconds is not None:
+            kwargs["ttl_seconds"] = body.ttl_seconds
         return mem.add(body.data, **kwargs)
+
+    @app.post("/v1/users/{user_id}/events", dependencies=authed)
+    def add_event(
+        user_id: str,
+        body: AddEventBody,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> Any:
+        mem = mem_pool.for_user(user_id)
+        return mem.add_event(
+            event_id=body.event_id,
+            facets=body.facets,
+            source=body.source,
+        )
+
+    @app.get("/v1/users/{user_id}/events/{event_id}", dependencies=authed)
+    def get_event(
+        user_id: str,
+        event_id: str,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> list[dict[str, Any]]:
+        return mem_pool.for_user(user_id).get_event(event_id)
 
     @app.get("/v1/users/{user_id}/memories/search", dependencies=authed)
     def search_memories(
@@ -148,6 +193,56 @@ def create_app() -> FastAPI:
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
         return mem_pool.for_user(user_id).domain_stats()
+
+    # ── maintenance endpoints ─────────────────────────────────────────────────
+
+    @app.post("/v1/users/{user_id}/maintenance/trigger", dependencies=authed)
+    def maintenance_trigger(
+        user_id: str,
+        body: MaintenanceTriggerBody,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> dict[str, Any]:
+        """Run a maintenance task for a user.
+
+        Pass ``task`` to run a specific task, or omit to run all due tasks.
+        Set ``dry_run=false`` to actually mutate memory (default: true).
+        """
+        mem = mem_pool.for_user(user_id)
+        # Build a MaintenanceWindow on the fly for this user
+        from voltmem import MaintenanceWindow
+        mw = MaintenanceWindow(mem.layer)
+        # Register default tasks
+        from voltmem.maintenance import expire_cleanup, reclassify_ambiguous, pattern_audit, consolidate
+        mw.register("expire_cleanup", expire_cleanup, interval=0)
+        mw.register("reclassify_ambiguous", reclassify_ambiguous, interval=0)
+        mw.register("pattern_audit", pattern_audit, interval=0)
+        mw.register("consolidate", lambda ctx: consolidate(ctx, dry_run=body.dry_run), interval=0)
+
+        if body.task:
+            try:
+                result = mw.run_once(body.task)
+                return {"task": body.task, "dry_run": body.dry_run, "result": result}
+            except KeyError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown task: {body.task}",
+                ) from e
+        else:
+            results = mw.run_all()
+            return {"tasks": list(results.keys()), "dry_run": body.dry_run, "results": results}
+
+    @app.get("/v1/users/{user_id}/maintenance/tasks", dependencies=authed)
+    def maintenance_tasks(
+        user_id: str,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> list[dict[str, Any]]:
+        """List available maintenance tasks."""
+        return [
+            {"name": "expire_cleanup", "description": "Purge expired rows", "interval": 3600},
+            {"name": "reclassify_ambiguous", "description": "Flag domains with high mismatch rates", "interval": 0},
+            {"name": "pattern_audit", "description": "Flag items with accumulated mismatches", "interval": 0},
+            {"name": "consolidate", "description": "Reorganize memories with emergent change signals", "interval": 0},
+        ]
 
     return app
 

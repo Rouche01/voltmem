@@ -1,7 +1,10 @@
 import type {
   AddData,
   AddOptions,
+  AddEventOptions,
   DomainStats,
+  Facet,
+  MaintenanceTriggerOptions,
   MemoryHit,
   MemoryItem,
   SearchOptions,
@@ -13,8 +16,11 @@ import type {
 export type {
   AddData,
   AddOptions,
+  AddEventOptions,
   DomainStat,
   DomainStats,
+  Facet,
+  MaintenanceTriggerOptions,
   MemoryHit,
   MemoryItem,
   Message,
@@ -76,10 +82,40 @@ export class VoltMemClient {
     const body: Record<string, unknown> = { data };
     if (options.source !== undefined) body.source = options.source;
     if (options.extract !== undefined) body.extract = options.extract;
+    if (options.event_id !== undefined) body.event_id = options.event_id;
+    if (options.modality !== undefined) body.modality = options.modality;
+    if (options.expires_at !== undefined) body.expires_at = options.expires_at;
+    if (options.ttl_seconds !== undefined) body.ttl_seconds = options.ttl_seconds;
     return this.request<WriteResult | WriteResult[]>(
       "POST",
       `/v1/users/${encodeURIComponent(userId)}/memories`,
       { body },
+    );
+  }
+
+  async addEvent(
+    event_id: string,
+    facets: Facet[],
+    options: AddEventOptions = {},
+  ): Promise<WriteResult[]> {
+    const userId = this.requireUserId(options.userId);
+    const body: Record<string, unknown> = { event_id, facets };
+    if (options.source !== undefined) body.source = options.source;
+    return this.request<WriteResult[]>(
+      "POST",
+      `/v1/users/${encodeURIComponent(userId)}/events`,
+      { body },
+    );
+  }
+
+  async getEvent(
+    eventId: string,
+    options: UserOptions = {},
+  ): Promise<MemoryItem[]> {
+    const userId = this.requireUserId(options.userId);
+    return this.request<MemoryItem[]>(
+      "GET",
+      `/v1/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}`,
     );
   }
 
@@ -150,6 +186,30 @@ export class VoltMemClient {
     return this.request<DomainStats>(
       "GET",
       `/v1/users/${encodeURIComponent(userId)}/domain_stats`,
+    );
+  }
+
+  async maintenanceTrigger(
+    options: MaintenanceTriggerOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const userId = this.requireUserId(options.userId);
+    const body: Record<string, unknown> = {};
+    if (options.task !== undefined) body.task = options.task;
+    if (options.dry_run !== undefined) body.dry_run = options.dry_run;
+    return this.request<Record<string, unknown>>(
+      "POST",
+      `/v1/users/${encodeURIComponent(userId)}/maintenance/trigger`,
+      { body },
+    );
+  }
+
+  async maintenanceTasks(
+    options: UserOptions = {},
+  ): Promise<Array<{ name: string; description: string; interval: number }>> {
+    const userId = this.requireUserId(options.userId);
+    return this.request<Array<{ name: string; description: string; interval: number }>>(
+      "GET",
+      `/v1/users/${encodeURIComponent(userId)}/maintenance/tasks`,
     );
   }
 

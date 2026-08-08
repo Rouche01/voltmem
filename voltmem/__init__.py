@@ -54,6 +54,14 @@ from .vector_index import (
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
 from .discovery import DomainStats, VolatilityTracker, blend_volatility
+from .maintenance import (
+    MaintenanceWindow,
+    MaintenanceContext,
+    expire_cleanup,
+    reclassify_ambiguous,
+    pattern_audit,
+    consolidate,
+)
 from .scoring import (
     escalation_score,
     retrieval_score,
@@ -118,6 +126,12 @@ __all__ = [
     "EXPLICIT_MAX_VD",
     "EXPLICIT_E_RATIO",
     "CUMULATIVE_MISMATCH_ESCALATE",
+    "MaintenanceWindow",
+    "MaintenanceContext",
+    "expire_cleanup",
+    "reclassify_ambiguous",
+    "pattern_audit",
+    "consolidate",
 ]
 
 __version__ = "0.2.2"
