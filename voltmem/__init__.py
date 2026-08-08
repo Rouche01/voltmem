@@ -66,6 +66,11 @@ from .scoring import (
     SIM_SPREAD_FLAT,
     SIM_SPREAD_FULL,
     MIX_MIN,
+    EXPLICIT_OVERRIDE_M,
+    EXPLICIT_MIN_VD,
+    EXPLICIT_MAX_VD,
+    EXPLICIT_E_RATIO,
+    CUMULATIVE_MISMATCH_ESCALATE,
 )
 
 __all__ = [
@@ -108,6 +113,11 @@ __all__ = [
     "SIM_SPREAD_FLAT",
     "SIM_SPREAD_FULL",
     "MIX_MIN",
+    "EXPLICIT_OVERRIDE_M",
+    "EXPLICIT_MIN_VD",
+    "EXPLICIT_MAX_VD",
+    "EXPLICIT_E_RATIO",
+    "CUMULATIVE_MISMATCH_ESCALATE",
 ]
 
 __version__ = "0.2.2"

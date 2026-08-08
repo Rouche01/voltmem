@@ -29,10 +29,14 @@ CREATE TABLE IF NOT EXISTS memories (
     last_audited_at   REAL    DEFAULT 0.0,
     tags              TEXT    DEFAULT '[]',
     superseded_by     TEXT    DEFAULT NULL,
-    namespace         TEXT    NOT NULL DEFAULT 'default'
+    namespace         TEXT    NOT NULL DEFAULT 'default',
+    event_id          TEXT    DEFAULT NULL,
+    modality          TEXT    DEFAULT NULL,
+    expires_at        REAL    DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_domain ON memories(namespace, domain);
 CREATE INDEX IF NOT EXISTS idx_active ON memories(namespace, superseded_by);
+CREATE INDEX IF NOT EXISTS idx_event ON memories(namespace, event_id);
 CREATE TABLE IF NOT EXISTS domain_stats (
     namespace     TEXT NOT NULL,
     domain        TEXT NOT NULL,
@@ -54,6 +58,9 @@ def _row_to_item(row: sqlite3.Row) -> MemoryItem:
         domain=row["domain"],
         source=row["source"],
         namespace=row["namespace"] if "namespace" in keys else "default",
+        event_id=row["event_id"] if "event_id" in keys else None,
+        modality=row["modality"] if "modality" in keys else None,
+        expires_at=row["expires_at"] if "expires_at" in keys else None,
         repetition_count=row["repetition_count"],
         volatility_ema=row["volatility_ema"],
         mismatch_count=row["mismatch_count"],
@@ -86,6 +93,20 @@ class MemoryStore:
             self._conn.execute(
                 "ALTER TABLE memories ADD COLUMN namespace "
                 "TEXT NOT NULL DEFAULT 'default'")
+        if "event_id" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN event_id "
+                "TEXT DEFAULT NULL")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_event ON memories(namespace, event_id)")
+        if "modality" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN modality "
+                "TEXT DEFAULT NULL")
+        if "expires_at" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN expires_at "
+                "REAL DEFAULT NULL")
         ds_cols = {
             r[1] for r in self._conn.execute("PRAGMA table_info(domain_stats)")
         }
@@ -109,12 +130,14 @@ class MemoryStore:
                 id, content, domain, source,
                 repetition_count, volatility_ema, mismatch_count, goal_delta,
                 created_at, last_confirmed_at, last_audited_at,
-                tags, superseded_by, namespace
+                tags, superseded_by, namespace,
+                event_id, modality, expires_at
             ) VALUES (
                 :id, :content, :domain, :source,
                 :repetition_count, :volatility_ema, :mismatch_count, :goal_delta,
                 :created_at, :last_confirmed_at, :last_audited_at,
-                :tags, :superseded_by, :namespace
+                :tags, :superseded_by, :namespace,
+                :event_id, :modality, :expires_at
             )""", {
             "id": item.id,
             "content": item.content,
@@ -130,6 +153,9 @@ class MemoryStore:
             "tags": json.dumps(item.tags),
             "superseded_by": item.superseded_by,
             "namespace": item.namespace,
+            "event_id": item.event_id,
+            "modality": item.modality,
+            "expires_at": item.expires_at,
         })
         self._conn.commit()
         return item
@@ -145,7 +171,10 @@ class MemoryStore:
                 last_confirmed_at=:last_confirmed_at,
                 last_audited_at=:last_audited_at,
                 tags=:tags,
-                superseded_by=:superseded_by
+                superseded_by=:superseded_by,
+                event_id=:event_id,
+                modality=:modality,
+                expires_at=:expires_at
             WHERE id=:id
         """, {
             "id": item.id,
@@ -160,6 +189,9 @@ class MemoryStore:
             "last_audited_at": item.last_audited_at,
             "tags": json.dumps(item.tags),
             "superseded_by": item.superseded_by,
+            "event_id": item.event_id,
+            "modality": item.modality,
+            "expires_at": item.expires_at,
         })
         self._conn.commit()
 
@@ -172,10 +204,13 @@ class MemoryStore:
         return _row_to_item(row) if row else None
 
     def all_active(
-        self, namespace: str | None = None, domain: str | None = None
+        self, namespace: str | None = None, domain: str | None = None,
+        event_id: str | None = None,
     ) -> list[MemoryItem]:
         """Active (non-superseded) items. Scope to a tenant via `namespace`;
-        pass namespace=None only for cross-tenant/admin queries."""
+        pass namespace=None only for cross-tenant/admin queries.
+        Optionally filter by `event_id` to retrieve facets of a multi-facet event.
+        """
         clauses = ["superseded_by IS NULL"]
         params: list[object] = []
         if namespace is not None:
@@ -184,9 +219,30 @@ class MemoryStore:
         if domain:
             clauses.append("domain=?")
             params.append(domain)
+        if event_id:
+            clauses.append("event_id=?")
+            params.append(event_id)
         sql = "SELECT * FROM memories WHERE " + " AND ".join(clauses)
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_item(r) for r in rows]
+
+    def get_by_event(self, namespace: str, event_id: str) -> list[MemoryItem]:
+        """All items (active and superseded) for a given event, ordered by creation time."""
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE namespace=? AND event_id=? ORDER BY created_at",
+            (namespace, event_id),
+        ).fetchall()
+        return [_row_to_item(r) for r in rows]
+
+    def purge_expired(self, namespace: str) -> int:
+        """Hard-delete items whose expires_at is in the past.
+        Returns number of rows deleted."""
+        cur = self._conn.execute(
+            "DELETE FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
+            (namespace, time.time()),
+        )
+        self._conn.commit()
+        return cur.rowcount
 
     def search_by_content(
         self, query: str, namespace: str | None = None, limit: int = 20

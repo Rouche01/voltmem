@@ -184,6 +184,9 @@ class MemoryLayer:
         tags: list[str] | None = None,
         goal_delta: float | None = None,
         at_time: float | None = None,
+        event_id: str | None = None,
+        modality: str | None = None,
+        expires_at: float | None = None,
     ) -> WriteResult:
         """
         Write a new memory item unconditionally.
@@ -199,6 +202,9 @@ class MemoryLayer:
             namespace=self.namespace,
             tags=tags or [],
             goal_delta=goal_delta if goal_delta is not None else self.goal_delta_default,
+            event_id=event_id,
+            modality=modality,
+            expires_at=expires_at,
             created_at=now,
             last_confirmed_at=now,
         )
@@ -219,6 +225,9 @@ class MemoryLayer:
         goal_delta: float | None = None,
         load: float | None = None,
         at_time: float | None = None,
+        event_id: str | None = None,
+        modality: str | None = None,
+        expires_at: float | None = None,
     ) -> WriteResult:
         """
         Present a new observation to the memory layer.
@@ -246,6 +255,12 @@ class MemoryLayer:
             current goal. 0 = neutral.
         load : float
             Override instance-level load for this call.
+        event_id : str | None
+            Shared key when this observation is one facet of a multi-facet event.
+        modality : str | None
+            Kind of content (text / image / audio / sensor / structured).
+        expires_at : float | None
+            Unix timestamp when this fact becomes invalid (optional TTL).
         """
         gd = goal_delta if goal_delta is not None else self.goal_delta_default
         ld = load if load is not None else self.load
@@ -254,7 +269,8 @@ class MemoryLayer:
         existing = self._find_domain_items(domain)
 
         if not existing:
-            return self.write(content, domain, source, tags, gd, at_time=at_time)
+            return self.write(content, domain, source, tags, gd, at_time=at_time,
+                             event_id=event_id, modality=modality, expires_at=expires_at)
 
         # find the existing item this observation is actually about. With a
         # single item in the domain this is trivial (backward compatible); with
@@ -323,6 +339,9 @@ class MemoryLayer:
             repetition_count=1,
             volatility_ema=candidate.volatility_ema,  # carry forward EMA
             goal_delta=gd,
+            event_id=event_id,
+            modality=modality,
+            expires_at=expires_at,
             created_at=now,
             last_confirmed_at=now,
         )
@@ -418,6 +437,57 @@ class MemoryLayer:
 
     # ── retrieval ─────────────────────────────────────────────────────────────
 
+    def add_event(
+        self,
+        event_id: str,
+        facets: list[dict],
+        source: str = "explicit_statement",
+        tags: list[str] | None = None,
+        goal_delta: float | None = None,
+        at_time: float | None = None,
+    ) -> list[WriteResult]:
+        """
+        Store a multi-facet observation as N linked memory items.
+
+        Each facet is a dict with at minimum ``content`` and ``domain`` keys.
+        Optional keys per facet: ``modality``, ``ttl_seconds``, ``expires_at``.
+
+        Example::
+
+            mem.add_event("tick-50ms-001", facets=[
+                {"content": "corridor map patch A12", "domain": "spatial_map", "modality": "structured"},
+                {"content": "battery 37%", "domain": "power_state", "modality": "sensor"},
+                {"content": "go to charging dock", "domain": "current_task", "modality": "text"},
+            ])
+
+        Each facet is written unconditionally (no escalation). For facets that
+        supersede existing memory, call ``observe()`` individually.
+        """
+        results: list[WriteResult] = []
+        now = at_time if at_time is not None else time.time()
+        for facet in facets:
+            expires = facet.get("expires_at")
+            ttl = facet.get("ttl_seconds")
+            if expires is None and ttl is not None:
+                expires = now + ttl
+            result = self.write(
+                content=facet["content"],
+                domain=facet["domain"],
+                source=source,
+                tags=tags,
+                goal_delta=goal_delta,
+                at_time=at_time,
+                event_id=event_id,
+                modality=facet.get("modality"),
+                expires_at=expires,
+            )
+            results.append(result)
+        return results
+
+    def retrieve_by_event(self, event_id: str) -> list[MemoryItem]:
+        """Return all items (active and superseded) for a given event, ordered by creation time."""
+        return self._store.get_by_event(self.namespace, event_id)
+
     def retrieve(
         self,
         query: str,
@@ -465,6 +535,8 @@ class MemoryLayer:
 
         for item, sim in candidates:
             scoring_item = self._resolve_item_for_scoring(item)
+            if scoring_item.is_expired:
+                continue
             if use_staleness:
                 score = retrieval_score(scoring_item, sim, eval_now, mix=mix)
             else:
@@ -635,9 +707,10 @@ class MemoryLayer:
             return
         self._vector_index.delete(item_id, self.namespace)
 
-    def _active(self, domain: str | None = None) -> list[MemoryItem]:
+    def _active(self, domain: str | None = None, event_id: str | None = None) -> list[MemoryItem]:
         """Active memories scoped to this layer's namespace."""
-        return self._store.all_active(namespace=self.namespace, domain=domain)
+        return self._store.all_active(
+            namespace=self.namespace, domain=domain, event_id=event_id)
 
     def _find_domain_items(self, domain: str) -> list[MemoryItem]:
         return self._active(domain=domain)

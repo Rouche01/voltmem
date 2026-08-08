@@ -259,6 +259,37 @@ class Memory:
         """Per-domain prior-calibration telemetry (audit / mismatch / confirm rates)."""
         return self._layer.domain_stats()
 
+    def add_event(
+        self,
+        event_id: str,
+        facets: list[dict],
+        *,
+        source: str = "explicit_statement",
+    ) -> list[dict[str, Any]]:
+        """Store a multi-facet observation as N linked memory items.
+
+        Each facet is a dict with ``content``, ``domain``, and optional
+        ``modality`` / ``ttl_seconds`` / ``expires_at`` keys.
+
+        Example::
+
+            mem.add_event("tick-001", facets=[
+                {"content": "battery 37%", "domain": "power_state", "modality": "sensor"},
+                {"content": "go to dock", "domain": "current_task", "modality": "text"},
+            ])
+        """
+        results = self._layer.add_event(
+            event_id=event_id,
+            facets=facets,
+            source=source,
+        )
+        return [self._format_write(r) for r in results]
+
+    def get_event(self, event_id: str) -> list[dict[str, Any]]:
+        """Retrieve all facets (active and superseded) for an event."""
+        items = self._layer.retrieve_by_event(event_id)
+        return [self._format_item(item) for item in items]
+
     def close(self) -> None:
         if self._owns_layer:
             self._layer.close()

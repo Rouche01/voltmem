@@ -9,6 +9,7 @@ Scale: 0.0 (never changes) → 1.0 (changes very fast).
 These are defaults; callers can override per-item or register custom domains.
 """
 
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 
@@ -137,6 +138,13 @@ class MemoryItem:
     source:           str                    # one of SOURCE_RELIABILITY keys
     namespace:        str   = "default"      # tenant/user isolation key
 
+    # Event linkage — set when this item is one facet of a multi-facet observation
+    event_id:         Optional[str] = None   # shared key for multi-facet events
+    modality:         Optional[str] = None   # text / image / audio / sensor / structured
+
+    # Lifecycle — optional hard expiry for known-lifetime facts (complements V_d staleness)
+    expires_at:       Optional[float] = None  # unix timestamp; None = no hard expiry
+
     # Equation terms — updated over time
     repetition_count: int   = 1             # C: how many times confirmed
     volatility_ema:   float = -1.0          # V_d EMA; -1 means use domain prior
@@ -155,6 +163,12 @@ class MemoryItem:
     @property
     def is_active(self) -> bool:
         return self.superseded_by is None
+
+    @property
+    def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
+        return time.time() > self.expires_at
 
     @property
     def effective_volatility(self) -> float:
