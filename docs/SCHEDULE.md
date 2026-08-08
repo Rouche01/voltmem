@@ -170,7 +170,7 @@ Ask three questions before starting any task:
 | `voltmem/store.py` | Schema migration, `insert()`/`all_active()` updates, `purge_expired()` |
 | `voltmem/memory.py` | `add_event()`, `retrieve_by_event()`, `expires_at` passthrough on `write()`/`observe()` |
 | `voltmem/scoring.py` | `retrieval_score()` skip if expired |
-| `voltmem/vector_index.py` | Include `event_id` in index metadata |
+| `voltmem/vector_index.py` | Include `event_id` in index metadata ✅ |
 | `voltmem/maintenance.py` | New: `MaintenanceWindow`, task registry, default tasks |
 | `tests/test_voltmem.py` | Event linkage tests, TTL retrieval tests |
 | `tests/test_classifiers.py` | New: eval corpus loader + accuracy tests |

@@ -6,6 +6,9 @@ SQLite remains the source of truth for memory metadata. The vector index
 accelerates candidate retrieval; MemoryLayer still applies volatility-aware
 re-ranking on top of ANN results.
 
+Index rows carry lightweight metadata (``domain``, ``event_id``) so ANN hits
+can be scoped or inspected without a store round-trip for those fields.
+
 Backends:
   * BruteForceVectorIndex — in-memory, zero deps (tests / small stores)
   * SqliteVectorIndex     — vectors in a ``memory_vectors`` table (default)
@@ -58,6 +61,8 @@ class VectorIndex(Protocol):
         namespace: str,
         domain: str,
         vector: list[float],
+        *,
+        event_id: str | None = None,
     ) -> None: ...
 
     def delete(self, item_id: str, namespace: str) -> None: ...
@@ -71,6 +76,7 @@ class VectorIndex(Protocol):
         top_k: int,
         *,
         domain: str | None = None,
+        event_id: str | None = None,
     ) -> list[tuple[str, float]]: ...
 
     def close(self) -> None: ...
@@ -80,7 +86,8 @@ class BruteForceVectorIndex:
     """In-memory brute-force cosine search."""
 
     def __init__(self) -> None:
-        self._rows: dict[tuple[str, str], tuple[str, list[float]]] = {}
+        # (namespace, item_id) -> (domain, event_id, vector)
+        self._rows: dict[tuple[str, str], tuple[str, str | None, list[float]]] = {}
 
     def upsert(
         self,
@@ -88,8 +95,10 @@ class BruteForceVectorIndex:
         namespace: str,
         domain: str,
         vector: list[float],
+        *,
+        event_id: str | None = None,
     ) -> None:
-        self._rows[(namespace, item_id)] = (domain, list(vector))
+        self._rows[(namespace, item_id)] = (domain, event_id, list(vector))
 
     def delete(self, item_id: str, namespace: str) -> None:
         self._rows.pop((namespace, item_id), None)
@@ -106,12 +115,15 @@ class BruteForceVectorIndex:
         top_k: int,
         *,
         domain: str | None = None,
+        event_id: str | None = None,
     ) -> list[tuple[str, float]]:
         scored: list[tuple[str, float]] = []
-        for (ns, item_id), (dom, vec) in self._rows.items():
+        for (ns, item_id), (dom, ev, vec) in self._rows.items():
             if ns != namespace:
                 continue
             if domain is not None and dom != domain:
+                continue
+            if event_id is not None and ev != event_id:
                 continue
             sim = cosine_similarity(query_vector, vec)
             scored.append((item_id, sim))
@@ -127,6 +139,7 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
     item_id    TEXT PRIMARY KEY,
     namespace  TEXT NOT NULL,
     domain     TEXT NOT NULL,
+    event_id   TEXT DEFAULT NULL,
     dim        INTEGER NOT NULL,
     vector     BLOB NOT NULL
 );
@@ -143,8 +156,25 @@ class SqliteVectorIndex:
     def __init__(self, db_path: str | Path = ":memory:"):
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         _configure_sqlite(self._conn, db_path)
+        # Create base table/indexes first. event_id index is applied in
+        # ``_migrate`` so legacy DBs (pre-event_id column) can ALTER safely.
         self._conn.executescript(_CREATE_VECTORS)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        cols = {
+            r[1] for r in self._conn.execute("PRAGMA table_info(memory_vectors)")
+        }
+        if "event_id" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memory_vectors ADD COLUMN event_id "
+                "TEXT DEFAULT NULL"
+            )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_vectors_ns_event "
+            "ON memory_vectors(namespace, event_id)"
+        )
 
     def upsert(
         self,
@@ -152,19 +182,23 @@ class SqliteVectorIndex:
         namespace: str,
         domain: str,
         vector: list[float],
+        *,
+        event_id: str | None = None,
     ) -> None:
         blob = pack_vector(vector)
         self._conn.execute(
             """
-            INSERT INTO memory_vectors (item_id, namespace, domain, dim, vector)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO memory_vectors
+                (item_id, namespace, domain, event_id, dim, vector)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(item_id) DO UPDATE SET
                 namespace=excluded.namespace,
                 domain=excluded.domain,
+                event_id=excluded.event_id,
                 dim=excluded.dim,
                 vector=excluded.vector
             """,
-            (item_id, namespace, domain, len(vector), blob),
+            (item_id, namespace, domain, event_id, len(vector), blob),
         )
         self._conn.commit()
 
@@ -187,18 +221,21 @@ class SqliteVectorIndex:
         top_k: int,
         *,
         domain: str | None = None,
+        event_id: str | None = None,
     ) -> list[tuple[str, float]]:
-        if domain is None:
-            rows = self._conn.execute(
-                "SELECT item_id, vector FROM memory_vectors WHERE namespace=?",
-                (namespace,),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT item_id, vector FROM memory_vectors "
-                "WHERE namespace=? AND domain=?",
-                (namespace, domain),
-            ).fetchall()
+        clauses = ["namespace=?"]
+        params: list[object] = [namespace]
+        if domain is not None:
+            clauses.append("domain=?")
+            params.append(domain)
+        if event_id is not None:
+            clauses.append("event_id=?")
+            params.append(event_id)
+        sql = (
+            "SELECT item_id, vector FROM memory_vectors WHERE "
+            + " AND ".join(clauses)
+        )
+        rows = self._conn.execute(sql, params).fetchall()
         scored = [
             (item_id, cosine_similarity(query_vector, unpack_vector(blob)))
             for item_id, blob in rows

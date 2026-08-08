@@ -881,6 +881,7 @@ class MemoryLayer:
             item.namespace,
             item.domain,
             self._embed_fn(item.content),
+            event_id=item.event_id,
         )
 
     def _index_delete(self, item_id: str) -> None:

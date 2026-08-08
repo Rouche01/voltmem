@@ -60,6 +60,74 @@ def test_sqlite_index_namespace_isolation():
     idx.close()
 
 
+def test_brute_force_stores_event_id_metadata():
+    idx = BruteForceVectorIndex()
+    idx.upsert(
+        "a", "u1", "emotional_context", [1.0, 0.0], event_id="tick-001"
+    )
+    idx.upsert("b", "u1", "location", [0.0, 1.0], event_id="tick-001")
+    idx.upsert("c", "u1", "location", [0.5, 0.5], event_id="other")
+    assert idx._rows[("u1", "a")][1] == "tick-001"
+    hits = idx.search([1.0, 0.0], "u1", top_k=5, event_id="tick-001")
+    assert {h[0] for h in hits} == {"a", "b"}
+
+
+def test_sqlite_index_stores_and_filters_event_id():
+    idx = SqliteVectorIndex(":memory:")
+    idx.upsert("a", "u1", "emotional_context", [1.0, 0.0], event_id="tick-001")
+    idx.upsert("b", "u1", "location", [0.0, 1.0], event_id="tick-001")
+    idx.upsert("c", "u1", "location", [0.5, 0.5], event_id=None)
+    row = idx._conn.execute(
+        "SELECT event_id FROM memory_vectors WHERE item_id=?", ("a",)
+    ).fetchone()
+    assert row[0] == "tick-001"
+    hits = idx.search([1.0, 0.0], "u1", top_k=5, event_id="tick-001")
+    assert {h[0] for h in hits} == {"a", "b"}
+    idx.close()
+
+
+def test_sqlite_event_id_migration_on_existing_db():
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        db = Path(td) / "vectors.db"
+        conn = __import__("sqlite3").connect(str(db))
+        conn.executescript(
+            """
+            CREATE TABLE memory_vectors (
+                item_id    TEXT PRIMARY KEY,
+                namespace  TEXT NOT NULL,
+                domain     TEXT NOT NULL,
+                dim        INTEGER NOT NULL,
+                vector     BLOB NOT NULL
+            );
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        idx = SqliteVectorIndex(db)
+        idx.upsert("a", "u1", "location", [1.0, 0.0], event_id="evt-9")
+        row = idx._conn.execute(
+            "SELECT event_id FROM memory_vectors WHERE item_id=?", ("a",)
+        ).fetchone()
+        assert row[0] == "evt-9"
+        idx.close()
+
+
+def test_layer_upsert_writes_event_id_into_index():
+    with _layer_with_index("brute") as mem:
+        written = mem.write(
+            "exhausted but heading to the gym",
+            domain="emotional_context",
+            event_id="tick-001",
+        )
+        meta = mem._vector_index._rows[(mem.namespace, written.item.id)]
+        assert meta[0] == "emotional_context"
+        assert meta[1] == "tick-001"
+
+
 def test_cosine_similarity_clamps_negative():
     assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == 0.0
 
@@ -135,6 +203,10 @@ if __name__ == "__main__":
     tests = [
         test_brute_force_search_orders_by_similarity,
         test_sqlite_index_namespace_isolation,
+        test_brute_force_stores_event_id_metadata,
+        test_sqlite_index_stores_and_filters_event_id,
+        test_sqlite_event_id_migration_on_existing_db,
+        test_layer_upsert_writes_event_id_into_index,
         test_cosine_similarity_clamps_negative,
         test_retrieve_with_brute_index_matches_full_scan,
         test_retrieve_with_sqlite_index_matches_full_scan,
