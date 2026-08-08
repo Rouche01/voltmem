@@ -1,16 +1,16 @@
 # VoltMem Development Roadmap — Post-Sleeptime Compute Reframe
 
-**Version:** 0.2.2+ (in development)  
-**Date:** 2026-08-06  
+**Version:** 0.3.0  
+**Date:** 2026-08-08  
 **Based on:** [Sleeptime Compute blog post](../blog-sleeptime-compute.md) + [OPEN_PROBLEMS.md](OPEN_PROBLEMS.md)
 
 ---
 
 ## TL;DR
 
-The sleeptime compute insight reframes VoltMem's open problems: the real gap is not just better escalation math, but a **maintenance layer** that operates during idle cycles to integrate, relabel, and restructure memories after write-time constraints have passed. The next phase of VoltMem development shifts from reactive write-path fixes to **asynchronous maintenance operations** that bridge the gap between fast write-time decisions and long-term memory integrity.
+The sleeptime compute insight reframes VoltMem's open problems: the real gap is not just better escalation math, but a **maintenance layer** that operates during idle cycles to integrate, relabel, and restructure memories after write-time constraints have passed.
 
-**Immediate priority:** Build the enabling API for maintenance-window operations (`event_id` + multi-facet events), then add TTL support. These two features together unlock the architectural foundation for all subsequent maintenance work.
+**Shipped in 0.3.0:** enabling API (`event_id` + multi-facet + TTL), classification corpus, and maintenance substrate (tasks, ledger/rollback, sidecar daemon, WAL). **Next:** real `consolidate` content, keyword/collision fixes, dogfood (stylens), then smarter reclassify.
 
 ---
 
@@ -55,45 +55,19 @@ These shipped in v0.2.2 and are confirmed stable:
 
 ## 3. Next Up: P2 Items (Ranked by Sleeptime Relevance)
 
-### 3.1 Multi-Facet `event_id` + Multi-Write API **[START HERE]**
+### 3.1 Multi-Facet `event_id` + Multi-Write API **[DONE — 0.3.0]**
 
-**Why first:** This is the **enabling API** for all maintenance operations. Without event linkage, facets of the same observation drift apart in the store and maintenance cannot reconstruct relationships.
+**Shipped:** `event_id` / `modality` on `MemoryItem`; store + vector index metadata; `add_event()` + `retrieve_by_event()`; sidecar + TS client; tests for linked retrieval.
 
-**Realizes:** Blog thesis §4 ("Sleeptime compute semesterates the tradeoff") + OPEN_PROBLEMS Problem 4
-
-**Goal:** One observation → N domain-tagged items sharing an `event_id`, each with independent `V_d` / audit / staleness.
-
-**Concrete tasks:**
-
-1. **Schema change:** Add `event_id` and `modality` to `MemoryItem` (default `None` for backward compat)
-2. **Write API:** `MemoryLayer.add_event(event_id, facets=[...])`  
-   Each facet: `{content, domain, modality?}`
-3. **Store layer:** SQLite schema migration; indexed `event_id` column
-4. **Retrieval:** `retrieve_by_event(event_id)` to reassemble full observations
-5. **Vector index:** Include `event_id` in index metadata for filtered queries
-6. **Eval:** Synthetic multi-facet ticks (stable map + volatile battery); assert linked retrieval + independent stale@k
-
-**Does NOT include:**
-- Full multimodal payloads (P3 — defer until event linkage is proven)
-- Store adapters / vector DB backends (P3)
-
-**Minimum viable:** `event_id` string on `MemoryItem`, `add_event()` writes N items, `retrieve_by_event()` returns them ordered by creation time. Modality field is optional decoration in MVP.
+**Still open:** multimodal payloads / store adapters (P3); richer classifier multi-label path.
 
 ---
 
-### 3.2 Optional TTL Hybrid (`expires_at`)
+### 3.2 Optional TTL Hybrid (`expires_at`) **[DONE — 0.3.0]**
 
-**Why second:** Complements `event_id` for session-scoped facts ("User is in Berlin for a conference until Friday"). These expire on calendar time, not volatility. Gives maintenance window a clear signal: "this event is definitely dead, don't bother auditing."
+**Shipped:** `expires_at` / `ttl_seconds` on write APIs; retrieval skips expired; `expire_cleanup` via `MemoryLayer.purge_expired()` (store + vector index); sidecar / TS support.
 
-**Realizes:** OPEN_PROBLEMS TTL Enhancement
-
-**Concrete tasks:**
-
-1. **Schema change:** Add `expires_at` (unix timestamp, nullable) to `MemoryItem`
-2. **Write API:** `mem.add(text, expires_at=...)` and/or `ttl_seconds=86400`
-3. **Retrieval:** Skip or score=0 when `now > expires_at`; compose with existing `staleness`
-4. **Optional purge:** Background or on-read deletion of expired rows (maintenance hook)
-5. **Eval:** Haystack bench with expired items; assert 0% retrieval past expiry
+**Still open:** domain-level TTL templates; optional haystack expiry bench expansion.
 
 ---
 
@@ -118,22 +92,19 @@ These shipped in v0.2.2 and are confirmed stable:
 
 ---
 
-### 3.4 Maintenance Window Infrastructure **[FOUNDATIONAL, NOT A FEATURE]**
+### 3.4 Maintenance Window Infrastructure **[DONE substrate — 0.3.0]**
 
-Not a user-facing feature. The substrate that enables P2-sleeptime operations.
+Not a polish product feature — the substrate that enables P2-sleeptime operations.
 
-**Concrete tasks:**
+**Shipped:**
 
-1. **Maintenance runner:** `MaintenanceWindow` class with pluggable tasks
-2. **Task registry:** `register_maintenance_task(name, callable, interval_seconds)`
-3. **Default tasks:**
-   - `reclassify_ambiguous`: review facts with confidence < threshold across full history
-   - `pattern_audit`: scan `logged_mismatch` clusters for emergent change signals
-   - `expire_cleanup`: purge rows past `expires_at`
-4. **Scheduling:** Thread-based (default) or external cron trigger
-5. **Safety:** Runs on copy of state or with WAL mode; never blocks write path
+1. `MaintenanceWindow` + task registry (`voltmem/maintenance.py`)
+2. Tasks: `expire_cleanup`, `reclassify_ambiguous`, `pattern_audit`, `consolidate` (content still a **stub** — dry-run / opt-in only by default)
+3. Ledger tables + `rollback_maintenance(run_id)` for supersede / purge snapshots
+4. Sidecar: `POST .../maintenance/trigger`, `.../rollback`; background `MaintenanceScheduler` (`VOLTMEM_MAINTENANCE=1`) for expire / pattern_audit / reclassify (**not** consolidate)
+5. File-backed SQLite WAL + busy timeout on store and vector index
 
-**This is what the blog post calls "the maintenance window."** We don't ship it as a whole system. We ship the hooks that let it exist, then populate it task by task.
+**Still open:** replace consolidate stub with real merge; confidence-driven reclassify quality; richer scheduling UX.
 
 ---
 
@@ -151,23 +122,27 @@ Not a user-facing feature. The substrate that enables P2-sleeptime operations.
 ## 5. Work Schedule (Suggested Order)
 
 ```
-Phase 1 — Enabling API (this cycle)
+Phase 1 — Enabling API                              ✅ 0.3.0
 ├── 1.1 event_id on MemoryItem + store migration          ✅
 ├── 1.2 add_event() + retrieve_by_event() API             ✅
 ├── 1.3 expires_at on MemoryItem + retrieval filtering    ✅
 └── 1.4 Classification eval corpus (curate, measure)      ✅ baseline
 
-Phase 2 — Maintenance Launch (next cycle)
-├── 2.1 MaintenanceWindow scaffold + task registry
-├── 2.2 expire_cleanup task (simplest: purge dead rows)
-├── 2.3 reclassify_ambiguous task (needs corpus + confidence metric)
-└── 2.4 pattern_audit task (scans mismatch clusters, flags for user review)
+Phase 2 — Maintenance Launch                         ✅ substrate 0.3.0
+├── 2.1 MaintenanceWindow scaffold + task registry        ✅
+├── 2.2 expire_cleanup (purge + index sync + ledger)      ✅
+├── 2.3 reclassify_ambiguous (flag / secondary path)      ✅ scaffold
+├── 2.4 pattern_audit (mismatch clusters → review)        ✅ scaffold
+├── 2.5 Ledger + rollback_maintenance                     ✅
+├── 2.6 Sidecar daemon + trigger/rollback HTTP            ✅
+└── 2.7 Real consolidate (merge supersedes)               ❌ next
 
 Phase 3 — Integration & Polish
-├── 3.1 Sidecar: expose maintenance trigger endpoint
-├── 3.2 TypeScript client: event_id + expires_at support
-├── 3.3 Cloud LLM classifier (now that corpus exists)
-└── 3.4 Full multimodal payloads (after event linkage proven)
+├── 3.1 Sidecar maintenance endpoints                     ✅
+├── 3.2 TypeScript client: event_id + expires_at + maint  ✅
+├── 3.3 Keyword / collision fixes (feel→opinion, …)       ❌ next
+├── 3.4 Cloud LLM classifier (now that corpus exists)     ❌ later
+└── 3.5 Full multimodal payloads (after event linkage)    ❌ later
 ```
 
 ---

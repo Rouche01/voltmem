@@ -2,6 +2,7 @@
 
 Tracking doc from feedback and internal eval findings (Jul 2026).
 For reproduction commands see [RESEARCH.md](RESEARCH.md).
+Sleeptime / maintenance status: [SCHEDULE.md](SCHEDULE.md) (**0.3.0** substrate shipped).
 
 ---
 
@@ -140,7 +141,8 @@ Relevant eval probes: `experiments/voltmem_eval.py` → `ESCALATION_PROBES`
   route to medium-volatility slot or temporary override
 - [ ] **Separate write vs retrieve volatility** — stable at retrieval, more plastic at write for
   certain domains
-- [ ] **User-confirmed override API** — `mem.add(..., force_update=True)` for explicit corrections
+- [x] **User-confirmed override API** — `observe(..., force_update=True)` / maintenance
+  path bypasses escalation math for explicit corrections
 - [x] **Expand eval** — below-band one-shot retain + cumulative update for `biographical` /
   `core_preference`; medium-band `skill` / `relationship` / `long_term_goal`; CI via
   `tests/test_voltmem.py` + `experiments/voltmem_eval.py`
@@ -209,8 +211,8 @@ No answerability / cross-encoder second stage yet.
   cross-encoder — not a replacement for `V_d` staleness; only if open slice still lags
 - [x] **Query-aware penalty scaling** — dampen freshness via `mix` when top-pool similarity
   spread is low (plateau detected)
-- [ ] **Keep TTL separate** — optional hard expiry (Enhancement below) does not fix
-  under-specified ranking
+- [x] **Keep TTL separate** — optional hard expiry shipped independently in 0.3.0;
+  it does not fix under-specified ranking (Problem 3)
 
 ### What this does not fix
 
@@ -253,33 +255,35 @@ or embedding model suite — storage and encoders stay pluggable.
 
 ### Symptoms / current limits
 
-- `MemoryItem.content` is a single string; no `event_id`, modality, or binary/structured payload
-- `mem.add(...)` classifies and stores one domain per call
-- Classifiers and embeddings are text-oriented (`extract.py`, `embeddings.py`)
-- No retrieve-by-event (“give me the whole tick”) vs retrieve-by-facet (“stable map only”)
+- Text `content` is still the primary payload; binary/structured multimodal store adapters
+  are not built (P3)
+- Classifiers remain mostly text-oriented (`extract.py`, `embeddings.py`)
+- Event linkage is per-write; no automatic multi-label classifier that emits facets yet
 
-### What exists today
+### What exists today (0.3.0+)
 
 | Mechanism | Notes |
 |---|---|
-| Per-item domain + \(V_d\) | Already supports different decay if facets are separate items |
-| Optional TTL (Enhancement) | Composes with per-facet expiry once facets exist |
+| `event_id` + `modality` on items | Store + vector index metadata; nullable for compat |
+| `add_event()` / `retrieve_by_event()` | Multi-write + reassemble; sidecar + TS client |
+| Per-item domain + \(V_d\) | Independent decay / audit per facet |
+| Optional TTL | Per-facet `expires_at` / `ttl_seconds` |
 | Pluggable `similarity_fn` / embeddings | Path to non-text encoders without rewriting escalation math |
 | Custom `DomainRegistry` | App can register robot/sensor domains + priors |
 
 ### Suggested directions (phased)
 
-- [ ] **`event_id` + multi-write** — one observation → N domain-tagged items that share
+- [x] **`event_id` + multi-write** — one observation → N domain-tagged items that share
   an event key (and optional `modality`: text / image / audio / sensor / structured)
 - [ ] **Modality-agnostic item shape** — text *or* structured/binary payload + embedding
   reference; same `effective_volatility`, escalation, and `retrieval_score` path
-- [ ] **Per-facet volatility / TTL** — each facet keeps its own domain prior (and optional
+- [x] **Per-facet volatility / TTL** — each facet keeps its own domain prior (and optional
   `expires_at`); event linkage does not force a shared forget rate
-- [ ] **Event-aware retrieve** — APIs for “expand event”, “prefer facet domain”, or
-  assemble a unified view for the agent without collapsing policies
+- [x] **Event-aware retrieve** — `retrieve_by_event(event_id)` (+ HTTP /
+  TS); richer “prefer facet domain” UX still open
 - [ ] **Classifier path for multi-label** — emit several (domain, content/payload) facets
   per observation; confidence per facet (ties to Problem 1)
-- [ ] **Eval** — synthetic multi-facet ticks (stable map + volatile battery); assert
+- [x] **Eval** — synthetic multi-facet ticks (stable map + volatile battery); assert
   linked retrieval + independent stale@k / audit behavior
 - [ ] **Later: store adapters** — optional backends (SQLite today, vector DB, multimodal
   stores) behind the policy API — not a rewrite of VoltMem as the store
@@ -308,14 +312,15 @@ mem.add_event(
 
 ### Priority
 
-P3 for full multimodal payloads / store adapters; **P2 for `event_id` + multi-write**
-as the enabling API — unblocks robotics/IoT/tool agents without changing core math.
+P3 for full multimodal payloads / store adapters; **P2 `event_id` + multi-write shipped
+in 0.3.0** — remaining work is multimodal payloads and multi-label classifiers.
 
 ---
 
 ## Enhancement — Optional TTL hybrid (time-limited memories)
 
 *From dev.to feedback (Jul 2026). Complements volatility-weighted decay; does not replace it.*
+*Core TTL path shipped in **0.3.0**.*
 
 ### What it is
 
@@ -333,9 +338,9 @@ Examples:
 - Active deal stage or campaign context with a known end date
 - Session-scoped or trial-period facts the app already knows will expire
 
-### What exists today
+### What exists today (0.3.0+)
 
-VoltMem uses **soft, domain-weighted decay at retrieval** (not hard expiry):
+VoltMem still uses **soft, domain-weighted decay at retrieval** for undated facts:
 
 ```
 staleness = 1 - exp(-V_d · age_days)
@@ -344,13 +349,14 @@ score     = similarity · (1 - mix · V_d · staleness)
 
 See `voltmem/scoring.py` → `staleness()`, `retrieval_score()`, `freshness_mix()`.
 
-`MemoryItem` has `created_at` and `last_confirmed_at` but **no** `expires_at` field.
-Expired facts are down-ranked (volatile domains faster), not dropped by a hard cutoff.
+**Plus optional hard TTL:** `MemoryItem.expires_at`; writes accept `expires_at` /
+`ttl_seconds`; retrieval skips expired rows; `expire_cleanup` / `MemoryLayer.purge_expired()`
+removes them (store + vector index, ledgered).
 
-| | Volatility staleness (today) | Optional TTL (proposed) |
+| | Volatility staleness | Optional TTL |
 |---|---|---|
 | Question answered | What *type* of fact is this? | When must *this* fact die? |
-| Behavior | Soft penalty at search | Hard cutoff or heavy penalty past `expires_at` |
+| Behavior | Soft penalty at search | Hard cutoff past `expires_at` |
 | Good for | Mood, prefs, location patterns | Session context, deals, dated events |
 | Bad for | Facts with known calendar end | Stable prefs, biography (wrong if TTL'd) |
 
@@ -366,16 +372,16 @@ Expired facts are down-ranked (volatile domains faster), not dropped by a hard c
 - Classification brittleness (Problem 1)
 - Stable-fact escalation gap (Problem 2)
 - Under-specified retrieval / similarity plateaus (Problem 3)
-- Multi-facet / multimodal event linkage (Problem 4) — TTL is complementary once facets exist
+- Multimodal store adapters (Problem 4 remaining) — TTL already composes per facet
 - Wrong TTL on a stable fact is its own failure mode (same class as misclassification)
 
 ### Suggested design
 
-- [ ] **`expires_at` on `MemoryItem`** — optional unix timestamp (or `ttl_seconds` on write)
-- [ ] **Write API** — `mem.add(text, expires_at=...)` or `ttl_seconds=86400`
-- [ ] **Retrieval** — exclude or score=0 when `now > expires_at`; compose with existing
+- [x] **`expires_at` on `MemoryItem`** — optional unix timestamp (or `ttl_seconds` on write)
+- [x] **Write API** — `mem.add(text, expires_at=...)` or `ttl_seconds=86400`
+- [x] **Retrieval** — exclude when `now > expires_at`; compose with existing
   volatility staleness (both apply)
-- [ ] **Optional purge** — background or on-read deletion of expired rows
+- [x] **Optional purge** — `expire_cleanup` / `purge_expired()` (+ sidecar daemon)
 - [ ] **Domain defaults** — e.g. register `active_deal_stage` with suggested TTL template (app sets per fact)
 - [ ] **Eval** — haystack bench with expired items; assert 0% retrieval past expiry
 
@@ -389,11 +395,11 @@ mem.add(
 )
 ```
 
-At retrieve: if `expires_at` is set and in the past → skip item (or rank last).
+At retrieve: if `expires_at` is set and in the past → skip item.
 
 ### Priority
 
-P2 — useful for production apps with known-lifetime context; not urgent vs P0/P1 escalation fixes.
+**Shipped in 0.3.0** (write / retrieve / purge). Remaining: domain TTL templates + haystack expiry eval.
 
 ---
 
@@ -536,8 +542,9 @@ See also [SCHEDULE.md — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-
 | P2 | Classification eval corpus | Done — 230 labeled items; heuristic baseline ≈84%; CI floors |
 | P2 | Prior calibration telemetry | Done — `domain_stats()` always on; optional log sink later |
 | P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
-| P2 | Multi-facet `event_id` + multi-write (Problem 4) | Enabling API for non-chat agents; core math unchanged |
-| P2 | Optional TTL hybrid (`expires_at`) | App-defined lifetimes; complements volatility staleness |
+| P2 | Multi-facet `event_id` + multi-write (Problem 4) | Done — 0.3.0 enabling API; multimodal payloads deferred |
+| P2 | Optional TTL hybrid (`expires_at`) | Done — 0.3.0 write/retrieve/purge; domain TTL templates open |
+| P2 | Maintenance substrate (sleeptime hooks) | Done — 0.3.0 window/ledger/daemon; real consolidate next |
 | P2 | Cloud LLM classifier | Roadmap item; does not alone fix drift |
 | P3 | Multimodal payloads / store adapters (Problem 4) | After event linkage; keep VoltMem as policy layer |
 | P3 | Automatic domain discovery | Larger research scope |

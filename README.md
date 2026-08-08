@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.2.2-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
@@ -16,7 +16,22 @@ volatile memories rank lower at search time.
 
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
-**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md)
+**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md)
+
+### What’s new in 0.3.0
+
+- **Multi-facet events** — `event_id` / `modality` on items; `add_event()` +
+  `retrieve_by_event()` (Python, sidecar, TypeScript client)
+- **Optional TTL** — `expires_at` / `ttl_seconds`; retrieval skips expired rows;
+  `expire_cleanup` purges them (ledgered, index-synced)
+- **Maintenance substrate** — `MaintenanceWindow`, flag tasks (`pattern_audit`,
+  `reclassify_ambiguous`), run ledger + `rollback_maintenance(run_id)`
+- **Sidecar sleeptime hooks** — `POST .../maintenance/trigger` + `.../rollback`;
+  background daemon runs due expire/audit tasks (`VOLTMEM_MAINTENANCE=1`);
+  **`consolidate` is opt-in** (content still a stub — not default magic yet)
+- **Classification eval corpus** — 230 labeled utterances / 14 domains;
+  heuristic baseline ≈84%; CI floors in `tests/test_classifiers.py`
+- **SQLite WAL** — file-backed DBs open in WAL mode for HTTP + maintenance concurrency
 
 ### What’s new in 0.2.2
 
