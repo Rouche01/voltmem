@@ -383,8 +383,9 @@ removes them (store + vector index, ledgered).
 - [x] **Retrieval** — exclude when `now > expires_at`; compose with existing
   volatility staleness (both apply)
 - [x] **Optional purge** — `expire_cleanup` / `purge_expired()` (+ sidecar daemon)
+- [x] **Eval** — haystack bench with expired items; assert 0% retrieval past expiry
+  (`tests/test_ttl_haystack_eval.py`)
 - [ ] **Domain defaults** — e.g. register `active_deal_stage` with suggested TTL template (app sets per fact)
-- [ ] **Eval** — haystack bench with expired items; assert 0% retrieval past expiry
 
 Sketch:
 
@@ -400,7 +401,7 @@ At retrieve: if `expires_at` is set and in the past → skip item.
 
 ### Priority
 
-**Shipped in 0.3.0** (write / retrieve / purge). Remaining: domain TTL templates + haystack expiry eval.
+**Shipped in 0.3.0** (write / retrieve / purge). Remaining: domain TTL templates. Haystack expiry eval: `tests/test_ttl_haystack_eval.py`.
 
 ---
 
@@ -544,7 +545,7 @@ See also [SCHEDULE.md — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-
 | P2 | Prior calibration telemetry | Done — `domain_stats()` always on; optional log sink later |
 | P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
 | P2 | Multi-facet `event_id` + multi-write (Problem 4) | Done — 0.3.0 enabling API; multimodal payloads deferred |
-| P2 | Optional TTL hybrid (`expires_at`) | Done — 0.3.0 write/retrieve/purge; domain TTL templates open |
+| P2 | Optional TTL hybrid (`expires_at`) | Done — write/retrieve/purge + TTL haystack eval; domain TTL templates open |
 | P2 | Maintenance substrate (sleeptime hooks) | Done — window/ledger/daemon + real consolidate (evidence + summarizer) |
 | P2 | Cloud LLM classifier | Roadmap item; does not alone fix drift |
 | P3 | Multimodal payloads / store adapters (Problem 4) | After event linkage; keep VoltMem as policy layer |

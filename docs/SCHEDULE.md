@@ -67,7 +67,9 @@ These shipped in v0.2.2 and are confirmed stable:
 
 **Shipped:** `expires_at` / `ttl_seconds` on write APIs; retrieval skips expired; `expire_cleanup` via `MemoryLayer.purge_expired()` (store + vector index); sidecar / TS support.
 
-**Still open:** domain-level TTL templates; optional haystack expiry bench expansion.
+**Still open:** domain-level TTL templates.
+
+**Eval:** [`tests/test_ttl_haystack_eval.py`](../tests/test_ttl_haystack_eval.py) — expired decoys in a noisy haystack → **0%** retrieval past `expires_at` (also with vector index + after purge).
 
 ---
 
