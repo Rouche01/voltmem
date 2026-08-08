@@ -173,6 +173,7 @@ Ask three questions before starting any task:
 | `voltmem/vector_index.py` | Include `event_id` in index metadata ✅ |
 | `voltmem/maintenance.py` | New: `MaintenanceWindow`, task registry, default tasks |
 | `tests/test_voltmem.py` | Event linkage tests, TTL retrieval tests |
+| `tests/test_multi_facet_eval.py` | Synthetic multi-facet ticks: linked retrieve + independent stale@k / audit ✅ |
 | `tests/test_classifiers.py` | New: eval corpus loader + accuracy tests |
 | `docs/SCHEDULE.md` | This file — update as tasks complete |
 

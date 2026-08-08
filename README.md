@@ -339,6 +339,7 @@ hits = mem.search("what colors does the user like?")
 ```bash
 pip install -e ".[all]"
 python tests/test_voltmem.py
+python tests/test_multi_facet_eval.py
 python tests/test_client.py
 ```
 

@@ -285,6 +285,7 @@ or embedding model suite — storage and encoders stay pluggable.
   per observation; confidence per facet (ties to Problem 1)
 - [x] **Eval** — synthetic multi-facet ticks (stable map + volatile battery); assert
   linked retrieval + independent stale@k / audit behavior
+  (`tests/test_multi_facet_eval.py`)
 - [ ] **Later: store adapters** — optional backends (SQLite today, vector DB, multimodal
   stores) behind the policy API — not a rewrite of VoltMem as the store
 
