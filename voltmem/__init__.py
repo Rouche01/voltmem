@@ -53,6 +53,7 @@ from .vector_index import (
 )
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
+from .summarize import MemorySummarizer, HeuristicSummarizer, LLMSummarizer
 from .discovery import DomainStats, VolatilityTracker, blend_volatility
 from .maintenance import (
     MaintenanceWindow,
@@ -107,6 +108,9 @@ __all__ = [
     "LLMExtractor",
     "HeuristicFactExtractor",
     "LLMFactExtractor",
+    "MemorySummarizer",
+    "HeuristicSummarizer",
+    "LLMSummarizer",
     "DomainStats",
     "VolatilityTracker",
     "blend_volatility",
