@@ -567,6 +567,17 @@ class MemoryLayer:
         self._index_delete(item_id)
         return True
 
+    def purge_expired(self, *, now: float | None = None) -> int:
+        """Hard-delete expired rows and drop them from the vector index.
+
+        Returns the number of rows deleted. Prefer this over
+        ``MemoryStore.purge_expired`` so embeddings cannot orphan.
+        """
+        ids = self._store.purge_expired(self.namespace, now=now)
+        for item_id in ids:
+            self._index_delete(item_id)
+        return len(ids)
+
     # ── introspection ─────────────────────────────────────────────────────────
 
     def inspect(self, item_id: str) -> dict:

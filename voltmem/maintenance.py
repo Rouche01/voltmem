@@ -198,8 +198,8 @@ class MaintenanceWindow:
 # ── built-in tasks ────────────────────────────────────────────────────────────
 
 def expire_cleanup(ctx: MaintenanceContext) -> int:
-    """Purge expired rows. Returns number deleted."""
-    deleted = ctx.store.purge_expired(ctx.namespace)
+    """Purge expired rows and sync the vector index. Returns number deleted."""
+    deleted = ctx.layer.purge_expired()
     if deleted:
         print(f"[maintenance] expire_cleanup: purged {deleted} expired rows")
     return deleted

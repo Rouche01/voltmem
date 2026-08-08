@@ -234,15 +234,26 @@ class MemoryStore:
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
-    def purge_expired(self, namespace: str) -> int:
+    def purge_expired(self, namespace: str, *, now: float | None = None) -> list[str]:
         """Hard-delete items whose expires_at is in the past.
-        Returns number of rows deleted."""
-        cur = self._conn.execute(
+
+        Returns the deleted item ids so callers (``MemoryLayer``) can sync the
+        vector index. Prefer ``MemoryLayer.purge_expired()`` when an index is in use.
+        """
+        ts = time.time() if now is None else now
+        rows = self._conn.execute(
+            "SELECT id FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
+            (namespace, ts),
+        ).fetchall()
+        ids = [str(r[0]) for r in rows]
+        if not ids:
+            return []
+        self._conn.execute(
             "DELETE FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
-            (namespace, time.time()),
+            (namespace, ts),
         )
         self._conn.commit()
-        return cur.rowcount
+        return ids
 
     def search_by_content(
         self, query: str, namespace: str | None = None, limit: int = 20

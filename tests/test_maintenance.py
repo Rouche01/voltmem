@@ -77,11 +77,41 @@ def test_purge_expired_removes_dead_rows():
     with MemoryLayer(":memory:") as mem:
         mem.write("dead", domain="transient_fact", expires_at=1.0)
         mem.write("alive", domain="location")
-        deleted = mem._store.purge_expired("default")
+        deleted = mem.purge_expired()
         assert deleted == 1
         active = mem._store.all_active()
         assert len(active) == 1
         assert active[0].content == "alive"
+
+
+def test_expire_cleanup_syncs_vector_index():
+    """expire_cleanup must drop embeddings — store-only purge left orphans."""
+    from voltmem.vector_index import BruteForceVectorIndex
+
+    def _embed(text: str) -> list[float]:
+        # Distinct enough vectors for two items
+        return [1.0, 0.0] if "dead" in text else [0.0, 1.0]
+
+    idx = BruteForceVectorIndex()
+    mem = MemoryLayer(
+        ":memory:",
+        embed_fn=_embed,
+        vector_index=idx,
+        namespace="default",
+    )
+    dead = mem.write("dead fact", domain="transient_fact", expires_at=1.0)
+    alive = mem.write("alive berlin", domain="location")
+    assert len(idx.search([1.0, 0.0], "default", top_k=5)) >= 1
+
+    mw = MaintenanceWindow(mem)
+    mw.register("expire", expire_cleanup)
+    assert mw.run_once("expire") == 1
+
+    hits = idx.search([1.0, 0.0], "default", top_k=10)
+    hit_ids = {h[0] for h in hits}
+    assert dead.item.id not in hit_ids
+    assert alive.item.id in {h[0] for h in idx.search([0.0, 1.0], "default", top_k=10)}
+    mem.close()
 
 
 def test_event_id_inherited_on_supersede():
@@ -270,6 +300,7 @@ if __name__ == "__main__":
         test_add_event_creates_linked_facets,
         test_retrieve_by_event_ordered_by_creation,
         test_purge_expired_removes_dead_rows,
+        test_expire_cleanup_syncs_vector_index,
         test_event_id_inherited_on_supersede,
         test_observe_explicit_event_id_overrides_inheritance,
         test_maintenance_window_registration,
