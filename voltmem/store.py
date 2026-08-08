@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS maintenance_actions (
     FOREIGN KEY (run_id) REFERENCES maintenance_runs(run_id)
 );
 CREATE INDEX IF NOT EXISTS idx_maint_actions_run ON maintenance_actions(run_id);
+CREATE TABLE IF NOT EXISTS mismatch_evidence (
+    id                  TEXT PRIMARY KEY,
+    item_id             TEXT NOT NULL,
+    namespace           TEXT NOT NULL,
+    content             TEXT NOT NULL,
+    mismatch_magnitude  REAL NOT NULL,
+    source              TEXT NOT NULL,
+    created_at          REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mismatch_evidence_item
+    ON mismatch_evidence(item_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mismatch_evidence_ns
+    ON mismatch_evidence(namespace);
 """
 
 
@@ -178,6 +191,19 @@ class MemoryStore:
             );
             CREATE INDEX IF NOT EXISTS idx_maint_actions_run
                 ON maintenance_actions(run_id);
+            CREATE TABLE IF NOT EXISTS mismatch_evidence (
+                id                  TEXT PRIMARY KEY,
+                item_id             TEXT NOT NULL,
+                namespace           TEXT NOT NULL,
+                content             TEXT NOT NULL,
+                mismatch_magnitude  REAL NOT NULL,
+                source              TEXT NOT NULL,
+                created_at          REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_mismatch_evidence_item
+                ON mismatch_evidence(item_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_mismatch_evidence_ns
+                ON mismatch_evidence(namespace);
         """)
 
     # ── write ─────────────────────────────────────────────────────────────────
@@ -320,6 +346,7 @@ class MemoryStore:
         ids = self.list_expired_ids(namespace, now=ts)
         if not ids:
             return []
+        self.delete_mismatch_evidence_for_items(ids)
         self._conn.execute(
             "DELETE FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
             (namespace, ts),
@@ -347,6 +374,8 @@ class MemoryStore:
             "DELETE FROM memories WHERE id=? AND namespace=?",
             (item_id, namespace),
         )
+        if cur.rowcount > 0:
+            self.delete_mismatch_evidence_for_items([item_id])
         self._conn.commit()
         return cur.rowcount > 0
 
@@ -355,6 +384,8 @@ class MemoryStore:
         self._conn.execute("DELETE FROM memories WHERE namespace=?", (namespace,))
         self._conn.execute(
             "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
+        self._conn.execute(
+            "DELETE FROM mismatch_evidence WHERE namespace=?", (namespace,))
         self._conn.commit()
 
     def list_namespaces(self, *, exclude: tuple[str, ...] = ("__sidecar__",)) -> list[str]:
@@ -413,6 +444,60 @@ class MemoryStore:
         self._conn.execute(
             "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
         self._conn.commit()
+
+    # ── mismatch evidence (consolidate / sleeptime) ───────────────────────────
+
+    def append_mismatch_evidence(
+        self,
+        item_id: str,
+        namespace: str,
+        content: str,
+        *,
+        mismatch_magnitude: float,
+        source: str,
+        created_at: float | None = None,
+        evidence_id: str | None = None,
+    ) -> str:
+        """Persist a rejected observation text for later consolidate review."""
+        eid = evidence_id or str(uuid.uuid4())
+        ts = time.time() if created_at is None else created_at
+        self._conn.execute(
+            """INSERT INTO mismatch_evidence
+               (id, item_id, namespace, content, mismatch_magnitude, source, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (eid, item_id, namespace, content, mismatch_magnitude, source, ts),
+        )
+        self._conn.commit()
+        return eid
+
+    def list_mismatch_evidence(
+        self, item_id: str, *, limit: int = 50
+    ) -> list[dict]:
+        """Evidence rows for an item, oldest first (capped by ``limit`` most recent)."""
+        if limit <= 0:
+            return []
+        # Fetch newest ``limit`` rows, then return chronological order.
+        rows = self._conn.execute(
+            """SELECT * FROM mismatch_evidence
+               WHERE item_id=?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (item_id, limit),
+        ).fetchall()
+        out = [dict(r) for r in reversed(rows)]
+        return out
+
+    def delete_mismatch_evidence_for_items(self, item_ids: list[str]) -> int:
+        """Hard-delete evidence rows for purged memory ids. Returns rows removed."""
+        if not item_ids:
+            return 0
+        placeholders = ",".join("?" * len(item_ids))
+        cur = self._conn.execute(
+            f"DELETE FROM mismatch_evidence WHERE item_id IN ({placeholders})",
+            item_ids,
+        )
+        self._conn.commit()
+        return cur.rowcount
 
     # ── maintenance ledger ────────────────────────────────────────────────────
 

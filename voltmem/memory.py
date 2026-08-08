@@ -367,6 +367,14 @@ class MemoryLayer:
             # mismatch present but below threshold — log it, don't update content
             candidate.mismatch_count += 1
             self._store.update(candidate)
+            self._store.append_mismatch_evidence(
+                candidate.id,
+                self.namespace,
+                content,
+                mismatch_magnitude=mismatch_magnitude,
+                source=source,
+                created_at=now,
+            )
             self._record_domain_observation(
                 "logged_mismatch", domain, mismatch_magnitude)
             return WriteResult(
