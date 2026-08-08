@@ -544,7 +544,7 @@ See also [SCHEDULE.md — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-
 | P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
 | P2 | Multi-facet `event_id` + multi-write (Problem 4) | Done — 0.3.0 enabling API; multimodal payloads deferred |
 | P2 | Optional TTL hybrid (`expires_at`) | Done — 0.3.0 write/retrieve/purge; domain TTL templates open |
-| P2 | Maintenance substrate (sleeptime hooks) | Done — 0.3.0 window/ledger/daemon; real consolidate next |
+| P2 | Maintenance substrate (sleeptime hooks) | Done — window/ledger/daemon + real consolidate (evidence + summarizer) |
 | P2 | Cloud LLM classifier | Roadmap item; does not alone fix drift |
 | P3 | Multimodal payloads / store adapters (Problem 4) | After event linkage; keep VoltMem as policy layer |
 | P3 | Automatic domain discovery | Larger research scope |

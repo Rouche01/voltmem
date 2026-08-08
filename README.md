@@ -27,8 +27,9 @@ volatile memories rank lower at search time.
 - **Maintenance substrate** — `MaintenanceWindow`, flag tasks (`pattern_audit`,
   `reclassify_ambiguous`), run ledger + `rollback_maintenance(run_id)`
 - **Sidecar sleeptime hooks** — `POST .../maintenance/trigger` + `.../rollback`;
-  background daemon runs due expire/audit tasks (`VOLTMEM_MAINTENANCE=1`);
-  **`consolidate` is opt-in** (content still a stub — not default magic yet)
+  background daemon runs due expire/audit/**consolidate** tasks (`VOLTMEM_MAINTENANCE=1`);
+  consolidate merges mismatch evidence into updated tips (skip if no evidence;
+  disable with `VOLTMEM_CONSOLIDATE=0`)
 - **Classification eval corpus** — 230 labeled utterances / 14 domains;
   heuristic baseline ≈84%; CI floors in `tests/test_classifiers.py`
 - **SQLite WAL** — file-backed DBs open in WAL mode for HTTP + maintenance concurrency

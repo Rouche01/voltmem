@@ -67,10 +67,66 @@ def test_list_namespaces_excludes_sidecar():
         assert "__sidecar__" not in ns
 
 
+def test_scheduler_registers_consolidate_by_default():
+    domains, classifier = build_profile("stylens")
+    restore = domains.install()
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        pool = MemoryPool(path, embeddings=False, classifier=classifier)
+        pool.for_user("sched-user").add("hello")
+        sched = SidecarMaintenanceScheduler(
+            pool,
+            check_interval=3600,
+            expire_interval=99999,
+            pattern_interval=99999,
+            reclassify_interval=99999,
+            consolidate_interval=0.01,
+            consolidate_enabled=True,
+        )
+        mw = sched._window_for("sched-user")
+        assert "consolidate" in mw._tasks
+        out = sched.tick()
+        assert "sched-user" in out
+        assert "consolidate" in out["sched-user"].get("results", {})
+        pool.close()
+    finally:
+        restore()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def test_scheduler_can_disable_consolidate():
+    domains, classifier = build_profile("stylens")
+    restore = domains.install()
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        pool = MemoryPool(path, embeddings=False, classifier=classifier)
+        pool.for_user("sched-user").add("hello")
+        sched = SidecarMaintenanceScheduler(
+            pool,
+            consolidate_enabled=False,
+        )
+        mw = sched._window_for("sched-user")
+        assert "consolidate" not in mw._tasks
+        pool.close()
+    finally:
+        restore()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 if __name__ == "__main__":
     tests = [
         test_scheduler_tick_runs_expire_cleanup_off_request_path,
         test_list_namespaces_excludes_sidecar,
+        test_scheduler_registers_consolidate_by_default,
+        test_scheduler_can_disable_consolidate,
     ]
     failed = 0
     for fn in tests:

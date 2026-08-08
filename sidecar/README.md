@@ -55,6 +55,8 @@ python -m sidecar
 | `VOLTMEM_EXPIRE_INTERVAL` | `3600` | Min seconds between `expire_cleanup` per user |
 | `VOLTMEM_PATTERN_AUDIT_INTERVAL` | `3600` | Min seconds between `pattern_audit` |
 | `VOLTMEM_RECLASSIFY_INTERVAL` | `86400` | Min seconds between `reclassify_ambiguous` |
+| `VOLTMEM_CONSOLIDATE` | `1` | Include consolidate in the daemon (`0` to disable) |
+| `VOLTMEM_CONSOLIDATE_INTERVAL` | `86400` | Min seconds between `consolidate` |
 | `HOST` | `0.0.0.0` | Bind address (`python -m sidecar`) |
 | `PORT` | `8080` | Listen port |
 
@@ -82,15 +84,15 @@ python -m sidecar
 ### Maintenance
 
 **Background daemon (default on):** a sidecar thread periodically runs
-`run_due` per tenant for `expire_cleanup`, `pattern_audit`, and
-`reclassify_ambiguous` (not `consolidate`). Disable with `VOLTMEM_MAINTENANCE=0`.
+`run_due` per tenant for `expire_cleanup`, `pattern_audit`,
+`reclassify_ambiguous`, and `consolidate`. Disable the whole daemon with
+`VOLTMEM_MAINTENANCE=0`, or only consolidate with `VOLTMEM_CONSOLIDATE=0`.
 
 **Manual trigger:** `POST .../maintenance/trigger` body: `{ "task"?: string, "dry_run"?: bool }`.
 
 - Default **`dry_run: false`** — mutating tasks apply (maintenance maintains).
 - Pass **`dry_run: true`** to preview without changing memory.
-- Omit ``task`` → default set: `expire_cleanup` + flag tasks (**not** `consolidate`).
-- ``task=consolidate`` is **opt-in** (stub content until summarizer ships).
+- Omit ``task`` → default set including `consolidate` (merges mismatch evidence; skips items with none).
 - Response includes **`run_id`**. Undo with:
 
 `POST .../maintenance/rollback` body: `{ "run_id": "..." }`

@@ -214,8 +214,7 @@ def create_app() -> FastAPI:
         """Run a maintenance task for a user.
 
         Pass ``task`` to run a specific task, or omit to run the default set
-        (``expire_cleanup`` + flag tasks). ``consolidate`` is **opt-in** via
-        ``task=consolidate`` until the summarizer stub is replaced.
+        (``expire_cleanup``, flag tasks, and ``consolidate``).
 
         ``dry_run`` (default ``false``) gates mutating tasks. Pass
         ``dry_run=true`` to preview. Returns a ``run_id`` for
@@ -233,7 +232,6 @@ def create_app() -> FastAPI:
         mw.register("expire_cleanup", expire_cleanup, interval=0)
         mw.register("reclassify_ambiguous", reclassify_ambiguous, interval=0)
         mw.register("pattern_audit", pattern_audit, interval=0)
-        # consolidate registered but only run when explicitly requested
         mw.register("consolidate", consolidate, interval=0)
 
         if body.task:
@@ -246,8 +244,6 @@ def create_app() -> FastAPI:
                     detail=f"Unknown task: {body.task}",
                 ) from e
 
-        # Default run_all: skip consolidate (stub writes) until summarizer ships
-        mw.unregister("consolidate")
         return mw.run_all(dry_run=body.dry_run)
 
     @app.post("/v1/users/{user_id}/maintenance/rollback", dependencies=authed)
@@ -299,10 +295,13 @@ def create_app() -> FastAPI:
             },
             {
                 "name": "consolidate",
-                "description": "Reorganize emergent-change memories (opt-in; stub content; ledgered)",
-                "interval": 0,
+                "description": (
+                    "Merge mismatch evidence into updated tips "
+                    "(mutates unless dry_run; ledgered; scheduled daily)"
+                ),
+                "interval": 86400,
                 "mutates": True,
-                "default_run_all": False,
+                "default_run_all": True,
             },
         ]
 

@@ -203,10 +203,19 @@ def test_consolidate_dry_run_does_not_mutate():
     item = mem._active(domain="emotional_context")[0]
     item.mismatch_count = 3
     mem._store.update(item)
+    mem._store.append_mismatch_evidence(
+        item.id,
+        mem.namespace,
+        "feeling better lately",
+        mismatch_magnitude=0.5,
+        source="weak_inference",
+    )
     mw = MaintenanceWindow(mem)
     mw.register("consolidate", consolidate)
     flags = mw.run_once("consolidate", dry_run=True)["result"]
     assert len(flags) == 1
+    assert flags[0]["new_content"] == "feeling better lately"
+    assert "skipped" not in flags[0]
     # Memory unchanged after dry run
     items = mem._active(domain="emotional_context")
     assert items[0].content == "old"
@@ -218,6 +227,13 @@ def test_consolidate_real_run_reorganizes():
     item = mem._active(domain="emotional_context")[0]
     item.mismatch_count = 3
     mem._store.update(item)
+    mem._store.append_mismatch_evidence(
+        item.id,
+        mem.namespace,
+        "feeling better lately",
+        mismatch_magnitude=0.5,
+        source="weak_inference",
+    )
     mw = MaintenanceWindow(mem)
     mw.register("consolidate", consolidate)
     out = mw.run_once("consolidate")
@@ -225,7 +241,49 @@ def test_consolidate_real_run_reorganizes():
     assert len(results) == 1
     assert results[0]["result"] == "audited"
     items = mem._active(domain="emotional_context")
-    assert items[0].content == "[consolidated] old"
+    assert items[0].content == "feeling better lately"
+
+
+def test_consolidate_skips_without_evidence():
+    mem = MemoryLayer(":memory:")
+    mem.write("old", domain="emotional_context")
+    item = mem._active(domain="emotional_context")[0]
+    item.mismatch_count = 3
+    mem._store.update(item)
+    mw = MaintenanceWindow(mem)
+    mw.register("consolidate", consolidate)
+    results = mw.run_once("consolidate")["result"]
+    assert len(results) == 1
+    assert results[0]["skipped"] == "no_evidence"
+    assert mem._active(domain="emotional_context")[0].content == "old"
+
+
+def test_consolidate_injectable_summarizer():
+    mem = MemoryLayer(":memory:")
+    mem.write("old tip", domain="emotional_context")
+    item = mem._active(domain="emotional_context")[0]
+    item.mismatch_count = 3
+    mem._store.update(item)
+    mem._store.append_mismatch_evidence(
+        item.id,
+        mem.namespace,
+        "signal a",
+        mismatch_magnitude=0.5,
+        source="weak_inference",
+    )
+
+    class FixedSummarizer:
+        def summarize(self, current, evidence, *, domain):
+            return "merged by test"
+
+    mw = MaintenanceWindow(mem)
+    mw.register(
+        "consolidate",
+        lambda ctx: consolidate(ctx, summarizer=FixedSummarizer()),
+    )
+    results = mw.run_once("consolidate")["result"]
+    assert results[0]["new_content"] == "merged by test"
+    assert mem._active(domain="emotional_context")[0].content == "merged by test"
 
 
 def test_consolidate_event_aware_flags_cofacets():
@@ -235,7 +293,7 @@ def test_consolidate_event_aware_flags_cofacets():
         {"content": "gym", "domain": "current_task"},
         {"content": "apartment", "domain": "location"},
     ])
-    # Build up mismatches on emotional_context
+    # Build up mismatches on emotional_context (also writes evidence)
     mem.observe("tired", domain="emotional_context", mismatch_magnitude=0.18)
     mem.observe("drained", domain="emotional_context", mismatch_magnitude=0.18)
     mem.observe("great", domain="emotional_context", mismatch_magnitude=0.18)
@@ -245,9 +303,12 @@ def test_consolidate_event_aware_flags_cofacets():
         lambda ctx: consolidate(ctx, min_mismatch_count=3, event_aware=True),
     )
     results = mw.run_once("consolidate")["result"]
-    reorganized = [r for r in results if "mismatch_count" in r]
-    cofacets = [r for r in results if "mismatch_count" not in r]
+    reorganized = [
+        r for r in results if "new_content" in r and not r.get("skipped")
+    ]
+    cofacets = [r for r in results if "note" in r]
     assert len(reorganized) == 1
+    assert reorganized[0]["new_content"] == "great"
     assert len(cofacets) == 2
     assert all(r["event_id"] == "tick-001" for r in cofacets)
 
@@ -271,12 +332,19 @@ def test_rollback_maintenance_undoes_consolidate():
     old_id = item.id
     item.mismatch_count = 3
     mem._store.update(item)
+    mem._store.append_mismatch_evidence(
+        item.id,
+        mem.namespace,
+        "feeling better lately",
+        mismatch_magnitude=0.5,
+        source="weak_inference",
+    )
     mw = MaintenanceWindow(mem)
     mw.register("consolidate", consolidate)
     out = mw.run_once("consolidate")
     run_id = out["run_id"]
     new_id = out["result"][0]["new_item_id"]
-    assert mem._active(domain="emotional_context")[0].content == "[consolidated] old"
+    assert mem._active(domain="emotional_context")[0].content == "feeling better lately"
 
     summary = mem.rollback_maintenance(run_id)
     assert summary["restored"] == 1
@@ -369,6 +437,8 @@ if __name__ == "__main__":
         test_pattern_audit_flags_accumulated_mismatches,
         test_consolidate_dry_run_does_not_mutate,
         test_consolidate_real_run_reorganizes,
+        test_consolidate_skips_without_evidence,
+        test_consolidate_injectable_summarizer,
         test_consolidate_event_aware_flags_cofacets,
         test_run_all_executes_all_tasks,
         test_rollback_maintenance_undoes_consolidate,

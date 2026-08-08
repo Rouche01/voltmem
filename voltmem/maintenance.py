@@ -7,7 +7,7 @@ performing operations too expensive or speculative for the write path:
 - expire_cleanup: purge rows past expires_at
 - reclassify_ambiguous: review low-confidence classifications with full history
 - pattern_audit: scan logged_mismatch clusters for emergent change signals
-- consolidate: reorganize memories with emergent change signals (ledgered)
+- consolidate: merge mismatch evidence into a new tip (ledgered supersede)
 
 Mutating tasks record a ``run_id`` ledger so ``MemoryLayer.rollback_maintenance``
 can undo supersedes and restore purged snapshots.
@@ -27,8 +27,7 @@ Safety::
 - Prefer running in a separate thread or process so the write path stays responsive
 - Tasks share the layer's SQLite connection; file-backed DBs open in WAL mode by default
 - Mutations go through the layer API and are ledgered when a run_id is active
-- ``consolidate`` is still a stub content-wise; prefer explicit ``task=consolidate``
-  until a real summarizer ships — default sidecar ``run_all`` skips it
+- ``consolidate`` skips wet mutate when an item has no mismatch evidence rows
 """
 
 from __future__ import annotations
@@ -40,6 +39,7 @@ from typing import Any, Callable, Optional
 
 from .memory import MemoryLayer, memory_item_to_payload
 from .domains import MemoryItem
+from .summarize import HeuristicSummarizer, MemorySummarizer
 
 
 # ── task registry ─────────────────────────────────────────────────────────────
@@ -282,6 +282,25 @@ class MaintenanceWindow:
 
 # ── built-in tasks ────────────────────────────────────────────────────────────
 
+def _days_since_audit(item: MemoryItem, now: float) -> float:
+    if item.last_audited_at:
+        return (now - item.last_audited_at) / 86400
+    return float("inf")
+
+
+def _is_emergent_candidate(
+    item: MemoryItem,
+    *,
+    now: float,
+    min_mismatch_count: int,
+    min_days_since_audit: float,
+) -> bool:
+    """Shared gate for pattern_audit / consolidate candidate selection."""
+    if item.mismatch_count < min_mismatch_count:
+        return False
+    return _days_since_audit(item, now) >= min_days_since_audit
+
+
 def expire_cleanup(
     ctx: MaintenanceContext, *, dry_run: bool | None = None
 ) -> int:
@@ -353,19 +372,21 @@ def pattern_audit(
     """Scan for items with repeated logged_mismatch — possible emergent change.
 
     Looks at active items with mismatch_count >= min_cluster_size that
-    haven't been audited. These are candidates for manual review or
+    haven't been audited recently. These are candidates for manual review or
     proactive escalation.
 
     Returns flag dicts; does NOT mutate.
     """
     now = time.time()
-    cutoff = now - lookback_days * 86400
     items = ctx.all_active()
     flags: list[dict] = []
     for item in items:
-        if item.mismatch_count < min_cluster_size:
-            continue
-        if item.last_audited_at and item.last_audited_at > cutoff:
+        if not _is_emergent_candidate(
+            item,
+            now=now,
+            min_mismatch_count=min_cluster_size,
+            min_days_since_audit=lookback_days,
+        ):
             continue
         flags.append({
             "item_id": item.id,
@@ -387,43 +408,67 @@ def consolidate(
     min_days_since_audit: float = 7.0,
     dry_run: bool | None = None,
     event_aware: bool = True,
+    summarizer: MemorySummarizer | None = None,
+    evidence_limit: int = 50,
 ) -> list[dict]:
-    """Proactively reorganize memories that show emergent change signals.
+    """Merge mismatch evidence into a new tip for emergent-change candidates.
 
-    Stub content: prefixes ``[consolidated]`` today. Mutations are ledgered
-    (``supersede``) for ``rollback_maintenance``.
+    Selection matches ``pattern_audit``-style gates. Wet mutate only when
+    ``mismatch_evidence`` rows exist; content comes from ``summarizer``
+    (default ``HeuristicSummarizer``). Mutations are ledgered (``supersede``)
+    for ``rollback_maintenance``. Co-facets of touched events are flag-only.
 
     When dry-run, returns what *would* be done without mutating.
     """
     is_dry = ctx.dry_run if dry_run is None else dry_run
+    writer = summarizer or HeuristicSummarizer()
     now = time.time()
     items = ctx.all_active()
     actions: list[dict] = []
     touched_events: set[str | None] = set()
 
     for item in items:
-        if item.mismatch_count < min_mismatch_count:
+        if not _is_emergent_candidate(
+            item,
+            now=now,
+            min_mismatch_count=min_mismatch_count,
+            min_days_since_audit=min_days_since_audit,
+        ):
             continue
-        days_since_audit = (
-            (now - item.last_audited_at) / 86400
-            if item.last_audited_at else float("inf")
+
+        days_since_audit = _days_since_audit(item, now)
+        evidence_rows = ctx.store.list_mismatch_evidence(
+            item.id, limit=evidence_limit
         )
-        if days_since_audit < min_days_since_audit:
-            continue
+        evidence_texts = [str(r["content"]) for r in evidence_rows]
 
-        # Stub: real implementation should summarize mismatch history.
-        new_content = f"[consolidated] {item.content}"
-
-        action = {
+        base = {
             "item_id": item.id,
             "domain": item.domain,
             "old_content": item.content,
-            "new_content": new_content,
             "mismatch_count": item.mismatch_count,
             "days_since_audit": round(days_since_audit, 1),
             "dry_run": is_dry,
             "event_id": item.event_id,
+            "evidence_count": len(evidence_texts),
         }
+
+        if not evidence_texts:
+            actions.append({**base, "skipped": "no_evidence"})
+            continue
+
+        new_content = writer.summarize(
+            item.content, evidence_texts, domain=item.domain
+        ).strip()
+        if not new_content or new_content.casefold() == item.content.casefold():
+            actions.append({
+                **base,
+                "new_content": new_content or item.content,
+                "skipped": "unchanged",
+            })
+            continue
+
+        action = {**base, "new_content": new_content}
 
         if not is_dry:
             result = ctx.layer.observe(
@@ -433,6 +478,8 @@ def consolidate(
                 source="system_generated",
                 goal_delta=0.0,
                 force_update=True,
+                event_id=item.event_id,
+                modality=item.modality,
             )
             action["result"] = result.action
             action["new_item_id"] = result.item.id
@@ -445,7 +492,11 @@ def consolidate(
     if event_aware:
         action_ids = {a["item_id"] for a in actions}
         for item in items:
-            if item.event_id in touched_events and item.id not in action_ids:
+            if (
+                item.event_id
+                and item.event_id in touched_events
+                and item.id not in action_ids
+            ):
                 actions.append({
                     "item_id": item.id,
                     "domain": item.domain,
@@ -457,8 +508,14 @@ def consolidate(
 
     if actions:
         mode = "would" if is_dry else "did"
-        n_reorganized = len([a for a in actions if "mismatch_count" in a])
-        n_cofacets = len(actions) - n_reorganized
-        print(f"[maintenance] consolidate: {mode} reorganize {n_reorganized} items"
-              f" ({n_cofacets} co-facets flagged)")
+        n_reorganized = len([
+            a for a in actions
+            if "new_content" in a and not a.get("skipped")
+        ])
+        n_skipped = len([a for a in actions if a.get("skipped")])
+        n_cofacets = len([a for a in actions if "note" in a])
+        print(
+            f"[maintenance] consolidate: {mode} reorganize {n_reorganized} items"
+            f" ({n_skipped} skipped, {n_cofacets} co-facets flagged)"
+        )
     return actions

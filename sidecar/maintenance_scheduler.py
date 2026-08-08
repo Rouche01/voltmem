@@ -1,8 +1,8 @@
 """Background maintenance scheduler for the HTTP sidecar.
 
-Runs default due tasks (expire_cleanup + flag audits) on a daemon thread so
-HTTP request handlers are not blocked. Consolidate stays opt-in via the
-manual trigger API.
+Runs due tasks (expire_cleanup, flag audits, consolidate) on a daemon
+thread so HTTP request handlers are not blocked. Set ``VOLTMEM_CONSOLIDATE=0``
+to leave consolidate out of the daemon while keeping manual trigger.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from voltmem import MaintenanceWindow
 from voltmem.maintenance import (
+    consolidate,
     expire_cleanup,
     pattern_audit,
     reclassify_ambiguous,
@@ -51,6 +52,8 @@ class SidecarMaintenanceScheduler:
         expire_interval: float | None = None,
         pattern_interval: float | None = None,
         reclassify_interval: float | None = None,
+        consolidate_interval: float | None = None,
+        consolidate_enabled: bool | None = None,
     ) -> None:
         self._pool = pool
         self._check_interval = (
@@ -72,6 +75,16 @@ class SidecarMaintenanceScheduler:
             reclassify_interval
             if reclassify_interval is not None
             else _env_float("VOLTMEM_RECLASSIFY_INTERVAL", 86400.0)
+        )
+        self._consolidate_interval = (
+            consolidate_interval
+            if consolidate_interval is not None
+            else _env_float("VOLTMEM_CONSOLIDATE_INTERVAL", 86400.0)
+        )
+        self._consolidate_enabled = (
+            consolidate_enabled
+            if consolidate_enabled is not None
+            else _env_bool("VOLTMEM_CONSOLIDATE", True)
         )
         self._windows: dict[str, MaintenanceWindow] = {}
         self._lock = threading.Lock()
@@ -96,6 +109,12 @@ class SidecarMaintenanceScheduler:
                 reclassify_ambiguous,
                 interval=self._reclassify_interval,
             )
+            if self._consolidate_enabled:
+                mw.register(
+                    "consolidate",
+                    consolidate,
+                    interval=self._consolidate_interval,
+                )
             self._windows[user_id] = mw
             return mw
 
@@ -136,7 +155,8 @@ class SidecarMaintenanceScheduler:
         self._thread.start()
         print(
             "[sidecar-maintenance] daemon started "
-            f"(check={self._check_interval}s expire={self._expire_interval}s)"
+            f"(check={self._check_interval}s expire={self._expire_interval}s"
+            f" consolidate={self._consolidate_interval if self._consolidate_enabled else 'off'}s)"
         )
 
     def stop(self, timeout: float = 5.0) -> None:

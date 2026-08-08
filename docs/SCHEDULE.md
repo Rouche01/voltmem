@@ -10,7 +10,7 @@
 
 The sleeptime compute insight reframes VoltMem's open problems: the real gap is not just better escalation math, but a **maintenance layer** that operates during idle cycles to integrate, relabel, and restructure memories after write-time constraints have passed.
 
-**Shipped in 0.3.0:** enabling API (`event_id` + multi-facet + TTL), classification corpus, and maintenance substrate (tasks, ledger/rollback, sidecar daemon, WAL). **Next:** real `consolidate` content, keyword/collision fixes, dogfood (stylens), then smarter reclassify.
+**Shipped in 0.3.0:** enabling API (`event_id` + multi-facet + TTL), classification corpus, and maintenance substrate (tasks, ledger/rollback, sidecar daemon, WAL). **Also shipped:** real `consolidate` (mismatch evidence + summarizer + scheduled). **Next:** keyword/collision fixes, dogfood (stylens), then smarter reclassify.
 
 ---
 
@@ -99,12 +99,12 @@ Not a polish product feature — the substrate that enables P2-sleeptime operati
 **Shipped:**
 
 1. `MaintenanceWindow` + task registry (`voltmem/maintenance.py`)
-2. Tasks: `expire_cleanup`, `reclassify_ambiguous`, `pattern_audit`, `consolidate` (content still a **stub** — dry-run / opt-in only by default)
+2. Tasks: `expire_cleanup`, `reclassify_ambiguous`, `pattern_audit`, `consolidate` (real merge from mismatch evidence; scheduled)
 3. Ledger tables + `rollback_maintenance(run_id)` for supersede / purge snapshots
-4. Sidecar: `POST .../maintenance/trigger`, `.../rollback`; background `MaintenanceScheduler` (`VOLTMEM_MAINTENANCE=1`) for expire / pattern_audit / reclassify (**not** consolidate)
+4. Sidecar: `POST .../maintenance/trigger`, `.../rollback`; background `MaintenanceScheduler` (`VOLTMEM_MAINTENANCE=1`) for expire / pattern_audit / reclassify / consolidate (`VOLTMEM_CONSOLIDATE=0` to disable consolidate only)
 5. File-backed SQLite WAL + busy timeout on store and vector index
 
-**Still open:** replace consolidate stub with real merge; confidence-driven reclassify quality; richer scheduling UX.
+**Still open:** confidence-driven reclassify quality; richer scheduling UX; co-facet auto-merge.
 
 ---
 
@@ -135,7 +135,7 @@ Phase 2 — Maintenance Launch                         ✅ substrate 0.3.0
 ├── 2.4 pattern_audit (mismatch clusters → review)        ✅ scaffold
 ├── 2.5 Ledger + rollback_maintenance                     ✅
 ├── 2.6 Sidecar daemon + trigger/rollback HTTP            ✅
-└── 2.7 Real consolidate (merge supersedes)               ❌ next
+└── 2.7 Real consolidate (merge supersedes)               ✅
 
 Phase 3 — Integration & Polish
 ├── 3.1 Sidecar maintenance endpoints                     ✅
