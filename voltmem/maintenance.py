@@ -7,6 +7,10 @@ performing operations too expensive or speculative for the write path:
 - expire_cleanup: purge rows past expires_at
 - reclassify_ambiguous: review low-confidence classifications with full history
 - pattern_audit: scan logged_mismatch clusters for emergent change signals
+- consolidate: reorganize memories with emergent change signals (ledgered)
+
+Mutating tasks record a ``run_id`` ledger so ``MemoryLayer.rollback_maintenance``
+can undo supersedes and restore purged snapshots.
 
 Usage::
 
@@ -15,27 +19,26 @@ Usage::
     mem = MemoryLayer("app.db")
     maintenance = MaintenanceWindow(mem)
     maintenance.register("expire_cleanup", expire_cleanup, interval=3600)
-    maintenance.run_once("expire_cleanup")
-    # or
-    maintenance.run_all()   # runs every registered task once
+    result = maintenance.run_once("expire_cleanup")
+    # result["run_id"] can be passed to mem.rollback_maintenance(run_id)
 
 Safety::
 
-- Tasks never block the write path (run in separate thread or external process)
-- Default: WAL mode SQLite + read-only snapshot for analysis tasks
-- Tasks receive a read-only view; mutations go through the layer's normal API
+- Prefer running in a separate thread or process so the write path stays responsive
+- Tasks share the layer's SQLite connection; file-backed DBs open in WAL mode by default
+- Mutations go through the layer API and are ledgered when a run_id is active
+- ``consolidate`` is still a stub content-wise; prefer explicit ``task=consolidate``
+  until a real summarizer ships — default sidecar ``run_all`` skips it
 """
 
 from __future__ import annotations
 
-import copy
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
-from .memory import MemoryLayer
+from .memory import MemoryLayer, memory_item_to_payload
 from .domains import MemoryItem
 
 
@@ -44,26 +47,35 @@ from .domains import MemoryItem
 @dataclass
 class MaintenanceTask:
     name: str
-    fn: Callable[["MaintenanceContext"], None]
+    fn: Callable[["MaintenanceContext"], Any]
     interval: float  # seconds between runs (0 = manual only)
     last_run: float = 0.0
 
 
 class MaintenanceContext:
-    """Read-only(ish) view passed to maintenance tasks.
+    """View passed to maintenance tasks.
 
-    Provides safe access to the memory layer's state without exposing
-    the full write API. Tasks that need to mutate call back through the
-    layer's public methods (observe, write, etc.).
+    Provides store/layer access. When ``run_id`` is set, mutating helpers
+    append to the maintenance ledger for possible later rollback.
     """
 
-    def __init__(self, layer: MemoryLayer):
+    def __init__(
+        self,
+        layer: MemoryLayer,
+        *,
+        run_id: str | None = None,
+        dry_run: bool = False,
+        task: str | None = None,
+    ):
         self._layer = layer
         self.namespace = layer.namespace
+        self.run_id = run_id
+        self.dry_run = dry_run
+        self.task = task
 
     @property
     def store(self):
-        """Direct store access for read-only queries."""
+        """Store access for queries and ledger helpers."""
         return self._layer._store
 
     @property
@@ -79,6 +91,31 @@ class MaintenanceContext:
 
     def summary(self) -> dict:
         return self._layer.summary()
+
+    def record_supersede(self, old_id: str, new_id: str, **extra: Any) -> None:
+        if not self.run_id or self.dry_run:
+            return
+        self.store.record_maintenance_action(
+            self.run_id,
+            self.task or "unknown",
+            "supersede",
+            old_id=old_id,
+            new_id=new_id,
+            payload=extra,
+        )
+
+    def record_purge(self, item: MemoryItem, **extra: Any) -> None:
+        if not self.run_id or self.dry_run:
+            return
+        payload = memory_item_to_payload(item)
+        payload.update(extra)
+        self.store.record_maintenance_action(
+            self.run_id,
+            self.task or "unknown",
+            "purge",
+            old_id=item.id,
+            payload=payload,
+        )
 
 
 class MaintenanceWindow:
@@ -96,7 +133,7 @@ class MaintenanceWindow:
     def register(
         self,
         name: str,
-        fn: Callable[[MaintenanceContext], None],
+        fn: Callable[[MaintenanceContext], Any],
         interval: float = 0.0,
     ) -> "MaintenanceWindow":
         """Register a maintenance task.
@@ -125,44 +162,92 @@ class MaintenanceWindow:
 
     # ── execution ─────────────────────────────────────────────────────────────
 
-    def run_once(self, name: str):
-        """Execute a single registered task immediately.
-        Returns the task's return value."""
+    def run_once(
+        self,
+        name: str,
+        *,
+        dry_run: bool = False,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Execute a single registered task.
+
+        Opens a ledger run (unless ``run_id`` is provided). Returns
+        ``{"run_id", "task", "dry_run", "result"}``.
+        """
         with self._lock:
             task = self._tasks.get(name)
         if task is None:
             raise KeyError(f"No maintenance task registered: {name!r}")
-        ctx = MaintenanceContext(self._layer)
-        result = task.fn(ctx)
-        task.last_run = time.time()
-        return result
 
-    def run_all(self) -> dict[str, bool]:
-        """Run every registered task once. Returns {name: success}."""
-        results: dict[str, bool] = {}
-        for task in self.tasks():
-            try:
-                self.run_once(task.name)
-                results[task.name] = True
-            except Exception as e:
-                results[task.name] = False
-                # Log but don't crash other tasks
-                print(f"[maintenance] {task.name} failed: {e}")
-        return results
+        own_run = run_id is None
+        rid = run_id or self._layer.start_maintenance_run(dry_run=dry_run)
+        ctx = MaintenanceContext(
+            self._layer, run_id=rid, dry_run=dry_run, task=name)
+        try:
+            result = task.fn(ctx)
+            task.last_run = time.time()
+            return {
+                "run_id": rid,
+                "task": name,
+                "dry_run": dry_run,
+                "result": result,
+            }
+        finally:
+            if own_run:
+                self._layer.finish_maintenance_run(rid)
 
-    def run_due(self) -> dict[str, bool]:
-        """Run tasks whose interval has elapsed since last run."""
-        now = time.time()
-        results: dict[str, bool] = {}
-        for task in self.tasks():
-            if task.interval > 0 and (now - task.last_run) >= task.interval:
+    def run_all(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """Run every registered task once under a shared ``run_id``."""
+        rid = self._layer.start_maintenance_run(dry_run=dry_run)
+        results: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        try:
+            for task in self.tasks():
                 try:
-                    self.run_once(task.name)
-                    results[task.name] = True
+                    out = self.run_once(
+                        task.name, dry_run=dry_run, run_id=rid)
+                    results[task.name] = out["result"]
                 except Exception as e:
-                    results[task.name] = False
+                    errors[task.name] = str(e)
                     print(f"[maintenance] {task.name} failed: {e}")
-        return results
+        finally:
+            self._layer.finish_maintenance_run(rid)
+        return {
+            "run_id": rid,
+            "dry_run": dry_run,
+            "results": results,
+            "errors": errors,
+        }
+
+    def run_due(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """Run tasks whose interval has elapsed since last run (shared run_id)."""
+        now = time.time()
+        due = [
+            t for t in self.tasks()
+            if t.interval > 0 and (now - t.last_run) >= t.interval
+        ]
+        if not due:
+            return {"run_id": None, "dry_run": dry_run, "results": {}, "errors": {}}
+        rid = self._layer.start_maintenance_run(dry_run=dry_run)
+        results: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        try:
+            for task in due:
+                try:
+                    out = self.run_once(
+                        task.name, dry_run=dry_run, run_id=rid)
+                    results[task.name] = out["result"]
+                except Exception as e:
+                    errors[task.name] = str(e)
+                    print(f"[maintenance] {task.name} failed: {e}")
+        finally:
+            self._layer.finish_maintenance_run(rid)
+        return {
+            "run_id": rid,
+            "dry_run": dry_run,
+            "results": results,
+            "errors": errors,
+        }
 
     # ── background thread ─────────────────────────────────────────────────────
 
@@ -197,9 +282,29 @@ class MaintenanceWindow:
 
 # ── built-in tasks ────────────────────────────────────────────────────────────
 
-def expire_cleanup(ctx: MaintenanceContext) -> int:
-    """Purge expired rows and sync the vector index. Returns number deleted."""
-    deleted = ctx.layer.purge_expired()
+def expire_cleanup(
+    ctx: MaintenanceContext, *, dry_run: bool | None = None
+) -> int:
+    """Purge expired rows (and sync the vector index).
+
+    When dry-run, counts rows that *would* be deleted without mutating.
+    Snapshots purged rows into the ledger for ``rollback_maintenance``.
+    """
+    is_dry = ctx.dry_run if dry_run is None else dry_run
+    ids = ctx.store.list_expired_ids(ctx.namespace)
+    if is_dry:
+        if ids:
+            print(f"[maintenance] expire_cleanup: would purge {len(ids)} expired rows (dry_run)")
+        return len(ids)
+
+    deleted = 0
+    for item_id in ids:
+        item = ctx.store.get(item_id)
+        if item is None or item.namespace != ctx.namespace:
+            continue
+        ctx.record_purge(item)
+        if ctx.layer.remove(item_id):
+            deleted += 1
     if deleted:
         print(f"[maintenance] expire_cleanup: purged {deleted} expired rows")
     return deleted
@@ -280,26 +385,17 @@ def consolidate(
     *,
     min_mismatch_count: int = 3,
     min_days_since_audit: float = 7.0,
-    dry_run: bool = True,
+    dry_run: bool | None = None,
     event_aware: bool = True,
 ) -> list[dict]:
     """Proactively reorganize memories that show emergent change signals.
 
-    This is the core sleeptime-compute task: it looks at items with
-    accumulated logged_mismatches that never crossed the real-time escalation
-    threshold, and decides whether the pattern is strong enough to warrant
-    a proactive update.
+    Stub content: prefixes ``[consolidated]`` today. Mutations are ledgered
+    (``supersede``) for ``rollback_maintenance``.
 
-    When ``dry_run=True`` (default), returns what *would* be done without
-    mutating. Set ``dry_run=False`` to actually supersede the old memory.
-
-    When ``event_aware=True`` (default), if a reorganized item belongs to a
-    multi-facet event, all other facets of that event are also flagged for
-    review — they may need co-ordinated update (e.g. location change implies
-    task context change).
-
-    Returns a list of action dicts describing what happened (or would happen).
+    When dry-run, returns what *would* be done without mutating.
     """
+    is_dry = ctx.dry_run if dry_run is None else dry_run
     now = time.time()
     items = ctx.all_active()
     actions: list[dict] = []
@@ -315,9 +411,7 @@ def consolidate(
         if days_since_audit < min_days_since_audit:
             continue
 
-        # Build a synthetic observation that captures the emergent change.
-        # In a real implementation this might use an LLM to summarize the
-        # mismatch history into a new, consolidated fact.
+        # Stub: real implementation should summarize mismatch history.
         new_content = f"[consolidated] {item.content}"
 
         action = {
@@ -327,43 +421,42 @@ def consolidate(
             "new_content": new_content,
             "mismatch_count": item.mismatch_count,
             "days_since_audit": round(days_since_audit, 1),
-            "dry_run": dry_run,
+            "dry_run": is_dry,
             "event_id": item.event_id,
         }
 
-        if not dry_run:
-            # Use the layer's public API to safely supersede
-            # force_update=True because the maintenance task has already
-            # done its own threshold checking (mismatch_count >= min).
+        if not is_dry:
             result = ctx.layer.observe(
                 content=new_content,
                 domain=item.domain,
-                mismatch_magnitude=0.85,  # strong enough to override protection
-                source="system_generated",  # lower reliability than explicit
+                mismatch_magnitude=0.85,
+                source="system_generated",
                 goal_delta=0.0,
                 force_update=True,
             )
             action["result"] = result.action
             action["new_item_id"] = result.item.id
+            if result.action == "audited":
+                ctx.record_supersede(item.id, result.item.id)
 
         actions.append(action)
         touched_events.add(item.event_id)
 
-    # Event-aware: flag co-facets for review
     if event_aware:
+        action_ids = {a["item_id"] for a in actions}
         for item in items:
-            if item.event_id in touched_events and item.id not in {a["item_id"] for a in actions}:
+            if item.event_id in touched_events and item.id not in action_ids:
                 actions.append({
                     "item_id": item.id,
                     "domain": item.domain,
                     "content": item.content,
                     "event_id": item.event_id,
                     "note": "co-facet of reorganized event — review for consistency",
-                    "dry_run": dry_run,
+                    "dry_run": is_dry,
                 })
 
     if actions:
-        mode = "would" if dry_run else "did"
+        mode = "would" if is_dry else "did"
         n_reorganized = len([a for a in actions if "mismatch_count" in a])
         n_cofacets = len(actions) - n_reorganized
         print(f"[maintenance] consolidate: {mode} reorganize {n_reorganized} items"

@@ -34,7 +34,11 @@ class AddEventBody(BaseModel):
 
 class MaintenanceTriggerBody(BaseModel):
     task: str | None = None
-    dry_run: bool = True
+    dry_run: bool = False
+
+
+class MaintenanceRollbackBody(BaseModel):
+    run_id: str
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -58,9 +62,14 @@ def create_app() -> FastAPI:
         pool = MemoryPool(db_path, embeddings=embeddings, classifier=classifier)
         app.state.pool = pool
         app.state.domain_restore = restore
+        from .maintenance_scheduler import SidecarMaintenanceScheduler
+        scheduler = SidecarMaintenanceScheduler.maybe_start(pool)
+        app.state.maintenance_scheduler = scheduler
         try:
             yield
         finally:
+            if scheduler is not None:
+                scheduler.stop()
             pool.close()
             restore()
 
@@ -204,32 +213,61 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         """Run a maintenance task for a user.
 
-        Pass ``task`` to run a specific task, or omit to run all due tasks.
-        Set ``dry_run=false`` to actually mutate memory (default: true).
+        Pass ``task`` to run a specific task, or omit to run the default set
+        (``expire_cleanup`` + flag tasks). ``consolidate`` is **opt-in** via
+        ``task=consolidate`` until the summarizer stub is replaced.
+
+        ``dry_run`` (default ``false``) gates mutating tasks. Pass
+        ``dry_run=true`` to preview. Returns a ``run_id`` for
+        ``POST .../maintenance/rollback``.
         """
         mem = mem_pool.for_user(user_id)
-        # Build a MaintenanceWindow on the fly for this user
         from voltmem import MaintenanceWindow
         mw = MaintenanceWindow(mem.layer)
-        # Register default tasks
-        from voltmem.maintenance import expire_cleanup, reclassify_ambiguous, pattern_audit, consolidate
+        from voltmem.maintenance import (
+            expire_cleanup,
+            reclassify_ambiguous,
+            pattern_audit,
+            consolidate,
+        )
         mw.register("expire_cleanup", expire_cleanup, interval=0)
         mw.register("reclassify_ambiguous", reclassify_ambiguous, interval=0)
         mw.register("pattern_audit", pattern_audit, interval=0)
-        mw.register("consolidate", lambda ctx: consolidate(ctx, dry_run=body.dry_run), interval=0)
+        # consolidate registered but only run when explicitly requested
+        mw.register("consolidate", consolidate, interval=0)
 
         if body.task:
             try:
-                result = mw.run_once(body.task)
-                return {"task": body.task, "dry_run": body.dry_run, "result": result}
+                out = mw.run_once(body.task, dry_run=body.dry_run)
+                return out
             except KeyError as e:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Unknown task: {body.task}",
                 ) from e
-        else:
-            results = mw.run_all()
-            return {"tasks": list(results.keys()), "dry_run": body.dry_run, "results": results}
+
+        # Default run_all: skip consolidate (stub writes) until summarizer ships
+        mw.unregister("consolidate")
+        return mw.run_all(dry_run=body.dry_run)
+
+    @app.post("/v1/users/{user_id}/maintenance/rollback", dependencies=authed)
+    def maintenance_rollback(
+        user_id: str,
+        body: MaintenanceRollbackBody,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> dict[str, Any]:
+        """Undo a ledgered maintenance run (supersedes + purged snapshots)."""
+        mem = mem_pool.for_user(user_id)
+        try:
+            return mem.layer.rollback_maintenance(body.run_id)
+        except KeyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+            ) from e
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            ) from e
 
     @app.get("/v1/users/{user_id}/maintenance/tasks", dependencies=authed)
     def maintenance_tasks(
@@ -238,10 +276,34 @@ def create_app() -> FastAPI:
     ) -> list[dict[str, Any]]:
         """List available maintenance tasks."""
         return [
-            {"name": "expire_cleanup", "description": "Purge expired rows", "interval": 3600},
-            {"name": "reclassify_ambiguous", "description": "Flag domains with high mismatch rates", "interval": 0},
-            {"name": "pattern_audit", "description": "Flag items with accumulated mismatches", "interval": 0},
-            {"name": "consolidate", "description": "Reorganize memories with emergent change signals", "interval": 0},
+            {
+                "name": "expire_cleanup",
+                "description": "Purge expired rows (mutates unless dry_run; ledgered; scheduled)",
+                "interval": 3600,
+                "mutates": True,
+                "default_run_all": True,
+            },
+            {
+                "name": "reclassify_ambiguous",
+                "description": "Flag domains with high mismatch rates (read-only; scheduled daily)",
+                "interval": 86400,
+                "mutates": False,
+                "default_run_all": True,
+            },
+            {
+                "name": "pattern_audit",
+                "description": "Flag items with accumulated mismatches (read-only; scheduled)",
+                "interval": 3600,
+                "mutates": False,
+                "default_run_all": True,
+            },
+            {
+                "name": "consolidate",
+                "description": "Reorganize emergent-change memories (opt-in; stub content; ledgered)",
+                "interval": 0,
+                "mutates": True,
+                "default_run_all": False,
+            },
         ]
 
     return app

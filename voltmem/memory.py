@@ -55,6 +55,51 @@ from .scoring import (
 )
 
 
+def memory_item_to_payload(item: MemoryItem) -> dict:
+    """JSON-friendly snapshot for maintenance purge rollback."""
+    return {
+        "id": item.id,
+        "content": item.content,
+        "domain": item.domain,
+        "source": item.source,
+        "namespace": item.namespace,
+        "event_id": item.event_id,
+        "modality": item.modality,
+        "expires_at": item.expires_at,
+        "repetition_count": item.repetition_count,
+        "volatility_ema": item.volatility_ema,
+        "mismatch_count": item.mismatch_count,
+        "goal_delta": item.goal_delta,
+        "created_at": item.created_at,
+        "last_confirmed_at": item.last_confirmed_at,
+        "last_audited_at": item.last_audited_at,
+        "tags": list(item.tags),
+        "superseded_by": item.superseded_by,
+    }
+
+
+def _memory_item_from_payload(payload: dict) -> MemoryItem:
+    return MemoryItem(
+        id=str(payload["id"]),
+        content=str(payload["content"]),
+        domain=str(payload["domain"]),
+        source=str(payload.get("source") or "system_generated"),
+        namespace=str(payload.get("namespace") or "default"),
+        event_id=payload.get("event_id"),
+        modality=payload.get("modality"),
+        expires_at=payload.get("expires_at"),
+        repetition_count=int(payload.get("repetition_count") or 1),
+        volatility_ema=float(payload.get("volatility_ema") if payload.get("volatility_ema") is not None else -1.0),
+        mismatch_count=int(payload.get("mismatch_count") or 0),
+        goal_delta=float(payload.get("goal_delta") or 0.0),
+        created_at=float(payload.get("created_at") or 0.0),
+        last_confirmed_at=float(payload.get("last_confirmed_at") or 0.0),
+        last_audited_at=float(payload.get("last_audited_at") or 0.0),
+        tags=list(payload.get("tags") or []),
+        superseded_by=payload.get("superseded_by"),
+    )
+
+
 # ── result types ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -378,6 +423,9 @@ class MemoryLayer:
         domain: str | None = None,
         tags: list[str] | None = None,
         at_time: float | None = None,
+        event_id: str | None = None,
+        modality: str | None = None,
+        expires_at: float | None = None,
     ) -> WriteResult:
         """
         The one-call write path: hand it a raw statement and it figures out the
@@ -406,6 +454,9 @@ class MemoryLayer:
                 source=source,
                 tags=tags,
                 at_time=at_time,
+                event_id=event_id,
+                modality=modality,
+                expires_at=expires_at,
             )
         dom = domain or self._extractor.classify_domain(text)
         slot_match, slot_sim = self._best_match_in_slot(text, dom)
@@ -419,8 +470,20 @@ class MemoryLayer:
                 source=source,
                 tags=tags,
                 at_time=at_time,
+                event_id=event_id,
+                modality=modality,
+                expires_at=expires_at,
             )
-        return self.write(text, domain=dom, source=source, tags=tags, at_time=at_time)
+        return self.write(
+            text,
+            domain=dom,
+            source=source,
+            tags=tags,
+            at_time=at_time,
+            event_id=event_id,
+            modality=modality,
+            expires_at=expires_at,
+        )
 
     def recall(
         self,
@@ -577,6 +640,97 @@ class MemoryLayer:
         for item_id in ids:
             self._index_delete(item_id)
         return len(ids)
+
+    def start_maintenance_run(self, *, dry_run: bool = False) -> str:
+        """Open a ledgered maintenance run; returns ``run_id``."""
+        return self._store.start_maintenance_run(
+            self.namespace, dry_run=dry_run)
+
+    def finish_maintenance_run(self, run_id: str) -> None:
+        self._store.finish_maintenance_run(run_id)
+
+    def rollback_maintenance(self, run_id: str) -> dict:
+        """Undo a maintenance run recorded in the ledger.
+
+        Supports:
+          * ``supersede`` — reactivate ``old_id``, retire ``new_id`` (when still valid)
+          * ``purge`` — re-insert the snapshotted item
+
+        Returns a summary dict. Raises ``KeyError`` if the run is missing or
+        wrong namespace; ``ValueError`` if already rolled back.
+        """
+        run = self._store.get_maintenance_run(run_id)
+        if run is None:
+            raise KeyError(f"Unknown maintenance run: {run_id!r}")
+        if run["namespace"] != self.namespace:
+            raise KeyError(f"Unknown maintenance run: {run_id!r}")
+        if run.get("rolled_back_at"):
+            raise ValueError(f"Maintenance run {run_id} already rolled back")
+        if run.get("dry_run"):
+            raise ValueError(f"Maintenance run {run_id} was a dry_run (nothing to undo)")
+
+        restored = 0
+        retired = 0
+        skipped: list[dict] = []
+
+        for action in reversed(self._store.list_maintenance_actions(run_id)):
+            atype = action["action_type"]
+            if atype == "supersede":
+                old_id = action.get("old_id")
+                new_id = action.get("new_id")
+                if not old_id or not new_id:
+                    skipped.append({**action, "reason": "missing ids"})
+                    continue
+                old = self._store.get(old_id)
+                new = self._store.get(new_id)
+                if old is None or new is None:
+                    skipped.append({**action, "reason": "item missing"})
+                    continue
+                if old.namespace != self.namespace or new.namespace != self.namespace:
+                    skipped.append({**action, "reason": "namespace mismatch"})
+                    continue
+                # Only safe if new is still the active tip and old points at new
+                if new.superseded_by is not None:
+                    skipped.append({**action, "reason": "new item already superseded"})
+                    continue
+                if old.superseded_by != new_id:
+                    skipped.append({**action, "reason": "old item no longer points at new"})
+                    continue
+                new.superseded_by = old_id
+                old.superseded_by = None
+                self._store.update(new)
+                self._store.update(old)
+                self._index_delete(new_id)
+                self._index_upsert(old)
+                restored += 1
+                retired += 1
+            elif atype == "purge":
+                payload = action.get("payload") or {}
+                item_id = action.get("old_id") or payload.get("id")
+                if not item_id or not payload:
+                    skipped.append({**action, "reason": "missing purge snapshot"})
+                    continue
+                existing = self._store.get(item_id)
+                if existing is not None:
+                    skipped.append({**action, "reason": "item already exists"})
+                    continue
+                item = _memory_item_from_payload(payload)
+                if item.namespace != self.namespace:
+                    skipped.append({**action, "reason": "namespace mismatch"})
+                    continue
+                self._store.insert(item)
+                self._index_upsert(item)
+                restored += 1
+            else:
+                skipped.append({**action, "reason": f"unsupported action_type {atype}"})
+
+        self._store.mark_maintenance_rolled_back(run_id)
+        return {
+            "run_id": run_id,
+            "restored": restored,
+            "retired": retired,
+            "skipped": skipped,
+        }
 
     # ── introspection ─────────────────────────────────────────────────────────
 

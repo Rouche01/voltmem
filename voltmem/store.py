@@ -14,6 +14,23 @@ from .domains import MemoryItem
 from .discovery import DomainStats
 
 
+def _configure_sqlite(conn: sqlite3.Connection, db_path: str | Path) -> None:
+    """Tune connection for sidecar + maintenance concurrency.
+
+    File-backed DBs use WAL so readers (HTTP) and writers (maintenance daemon)
+    contend less. ``:memory:`` is left alone (WAL is meaningless / unsupported
+    the same way for ephemeral DBs).
+    """
+    path = str(db_path)
+    # busy_timeout helps either mode when the other connection holds a lock briefly
+    conn.execute("PRAGMA busy_timeout=5000")
+    if path == ":memory:" or path.startswith("file::") and "mode=memory" in path:
+        return
+    # journal_mode=WAL persists on the database file; safe to re-run every open
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+
+
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS memories (
     id                TEXT PRIMARY KEY,
@@ -47,6 +64,27 @@ CREATE TABLE IF NOT EXISTS domain_stats (
     mismatch_sum  REAL    DEFAULT 0.0,
     PRIMARY KEY (namespace, domain)
 );
+CREATE TABLE IF NOT EXISTS maintenance_runs (
+    run_id          TEXT PRIMARY KEY,
+    namespace       TEXT NOT NULL,
+    dry_run         INTEGER NOT NULL DEFAULT 0,
+    started_at      REAL NOT NULL,
+    finished_at     REAL,
+    rolled_back_at  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_maint_runs_ns ON maintenance_runs(namespace);
+CREATE TABLE IF NOT EXISTS maintenance_actions (
+    id              TEXT PRIMARY KEY,
+    run_id          TEXT NOT NULL,
+    task            TEXT NOT NULL,
+    action_type     TEXT NOT NULL,
+    old_id          TEXT,
+    new_id          TEXT,
+    payload_json    TEXT DEFAULT '{}',
+    created_at      REAL NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES maintenance_runs(run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_maint_actions_run ON maintenance_actions(run_id);
 """
 
 
@@ -80,8 +118,10 @@ class MemoryStore:
     """
 
     def __init__(self, db_path: str | Path = ":memory:"):
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        self._db_path = str(db_path)
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        _configure_sqlite(self._conn, self._db_path)
         self._conn.executescript(_CREATE_TABLE)
         self._migrate()
         self._conn.commit()
@@ -114,6 +154,31 @@ class MemoryStore:
             self._conn.execute(
                 "ALTER TABLE domain_stats ADD COLUMN n_inserts "
                 "INTEGER DEFAULT 0")
+        # Maintenance ledger (idempotent CREATE IF NOT EXISTS)
+        self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS maintenance_runs (
+                run_id          TEXT PRIMARY KEY,
+                namespace       TEXT NOT NULL,
+                dry_run         INTEGER NOT NULL DEFAULT 0,
+                started_at      REAL NOT NULL,
+                finished_at     REAL,
+                rolled_back_at  REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_maint_runs_ns
+                ON maintenance_runs(namespace);
+            CREATE TABLE IF NOT EXISTS maintenance_actions (
+                id              TEXT PRIMARY KEY,
+                run_id          TEXT NOT NULL,
+                task            TEXT NOT NULL,
+                action_type     TEXT NOT NULL,
+                old_id          TEXT,
+                new_id          TEXT,
+                payload_json    TEXT DEFAULT '{}',
+                created_at      REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_maint_actions_run
+                ON maintenance_actions(run_id);
+        """)
 
     # ── write ─────────────────────────────────────────────────────────────────
 
@@ -234,6 +299,17 @@ class MemoryStore:
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def list_expired_ids(
+        self, namespace: str, *, now: float | None = None
+    ) -> list[str]:
+        """Return ids of items whose expires_at is in the past (no delete)."""
+        ts = time.time() if now is None else now
+        rows = self._conn.execute(
+            "SELECT id FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
+            (namespace, ts),
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
     def purge_expired(self, namespace: str, *, now: float | None = None) -> list[str]:
         """Hard-delete items whose expires_at is in the past.
 
@@ -241,11 +317,7 @@ class MemoryStore:
         vector index. Prefer ``MemoryLayer.purge_expired()`` when an index is in use.
         """
         ts = time.time() if now is None else now
-        rows = self._conn.execute(
-            "SELECT id FROM memories WHERE namespace=? AND expires_at IS NOT NULL AND expires_at < ?",
-            (namespace, ts),
-        ).fetchall()
-        ids = [str(r[0]) for r in rows]
+        ids = self.list_expired_ids(namespace, now=ts)
         if not ids:
             return []
         self._conn.execute(
@@ -284,6 +356,19 @@ class MemoryStore:
         self._conn.execute(
             "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
         self._conn.commit()
+
+    def list_namespaces(self, *, exclude: tuple[str, ...] = ("__sidecar__",)) -> list[str]:
+        """Distinct tenant namespaces present in memories or domain_stats."""
+        rows = self._conn.execute(
+            """
+            SELECT namespace FROM memories
+            UNION
+            SELECT namespace FROM domain_stats
+            ORDER BY 1
+            """
+        ).fetchall()
+        skip = set(exclude)
+        return [str(r[0]) for r in rows if r[0] not in skip]
 
     # ── domain stats (auto-discovery) ─────────────────────────────────────────
 
@@ -328,6 +413,82 @@ class MemoryStore:
         self._conn.execute(
             "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
         self._conn.commit()
+
+    # ── maintenance ledger ────────────────────────────────────────────────────
+
+    def start_maintenance_run(
+        self, namespace: str, *, dry_run: bool = False, run_id: str | None = None
+    ) -> str:
+        rid = run_id or str(uuid.uuid4())
+        self._conn.execute(
+            """INSERT INTO maintenance_runs
+               (run_id, namespace, dry_run, started_at)
+               VALUES (?, ?, ?, ?)""",
+            (rid, namespace, 1 if dry_run else 0, time.time()),
+        )
+        self._conn.commit()
+        return rid
+
+    def finish_maintenance_run(self, run_id: str) -> None:
+        self._conn.execute(
+            "UPDATE maintenance_runs SET finished_at=? WHERE run_id=?",
+            (time.time(), run_id),
+        )
+        self._conn.commit()
+
+    def mark_maintenance_rolled_back(self, run_id: str) -> None:
+        self._conn.execute(
+            "UPDATE maintenance_runs SET rolled_back_at=? WHERE run_id=?",
+            (time.time(), run_id),
+        )
+        self._conn.commit()
+
+    def get_maintenance_run(self, run_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM maintenance_runs WHERE run_id=?", (run_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def record_maintenance_action(
+        self,
+        run_id: str,
+        task: str,
+        action_type: str,
+        *,
+        old_id: str | None = None,
+        new_id: str | None = None,
+        payload: dict | None = None,
+    ) -> str:
+        aid = str(uuid.uuid4())
+        self._conn.execute(
+            """INSERT INTO maintenance_actions
+               (id, run_id, task, action_type, old_id, new_id, payload_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                aid,
+                run_id,
+                task,
+                action_type,
+                old_id,
+                new_id,
+                json.dumps(payload or {}),
+                time.time(),
+            ),
+        )
+        self._conn.commit()
+        return aid
+
+    def list_maintenance_actions(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM maintenance_actions WHERE run_id=? ORDER BY created_at",
+            (run_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["payload"] = json.loads(d.pop("payload_json") or "{}")
+            out.append(d)
+        return out
 
     def close(self):
         self._conn.close()

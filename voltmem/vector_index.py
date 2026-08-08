@@ -20,6 +20,15 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 
+def _configure_sqlite(conn: sqlite3.Connection, db_path: str | Path) -> None:
+    path = str(db_path)
+    conn.execute("PRAGMA busy_timeout=5000")
+    if path == ":memory:" or (path.startswith("file::") and "mode=memory" in path):
+        return
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
@@ -133,6 +142,7 @@ class SqliteVectorIndex:
 
     def __init__(self, db_path: str | Path = ":memory:"):
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        _configure_sqlite(self._conn, db_path)
         self._conn.executescript(_CREATE_VECTORS)
         self._conn.commit()
 

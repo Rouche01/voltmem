@@ -46,10 +46,15 @@ python -m sidecar
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use `/data/voltmem.db` in Docker) |
+| `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use `/data/voltmem.db` in Docker). File DBs use WAL automatically. |
 | `VOLTMEM_EMBEDDINGS` | `1` (truthy) | `0`/`false` disables embedder (hashing fallback) |
 | `VOLTMEM_API_KEY` | _(empty)_ | When set, require matching `X-API-Key` on `/v1/*` |
 | `VOLTMEM_PROFILE` | `stylens` | Domain registry + classifier profile |
+| `VOLTMEM_MAINTENANCE` | `1` | Background daemon for due tasks (`0` to disable) |
+| `VOLTMEM_MAINTENANCE_CHECK_INTERVAL` | `60` | Seconds between daemon ticks |
+| `VOLTMEM_EXPIRE_INTERVAL` | `3600` | Min seconds between `expire_cleanup` per user |
+| `VOLTMEM_PATTERN_AUDIT_INTERVAL` | `3600` | Min seconds between `pattern_audit` |
+| `VOLTMEM_RECLASSIFY_INTERVAL` | `86400` | Min seconds between `reclassify_ambiguous` |
 | `HOST` | `0.0.0.0` | Bind address (`python -m sidecar`) |
 | `PORT` | `8080` | Listen port |
 
@@ -68,6 +73,29 @@ python -m sidecar
 | DELETE | `/v1/users/{user_id}/memories` (clear) |
 | GET | `/v1/users/{user_id}/summary` |
 | GET | `/v1/users/{user_id}/domain_stats` |
+| POST | `/v1/users/{user_id}/events` |
+| GET | `/v1/users/{user_id}/events/{event_id}` |
+| POST | `/v1/users/{user_id}/maintenance/trigger` |
+| POST | `/v1/users/{user_id}/maintenance/rollback` |
+| GET | `/v1/users/{user_id}/maintenance/tasks` |
+
+### Maintenance
+
+**Background daemon (default on):** a sidecar thread periodically runs
+`run_due` per tenant for `expire_cleanup`, `pattern_audit`, and
+`reclassify_ambiguous` (not `consolidate`). Disable with `VOLTMEM_MAINTENANCE=0`.
+
+**Manual trigger:** `POST .../maintenance/trigger` body: `{ "task"?: string, "dry_run"?: bool }`.
+
+- Default **`dry_run: false`** — mutating tasks apply (maintenance maintains).
+- Pass **`dry_run: true`** to preview without changing memory.
+- Omit ``task`` → default set: `expire_cleanup` + flag tasks (**not** `consolidate`).
+- ``task=consolidate`` is **opt-in** (stub content until summarizer ships).
+- Response includes **`run_id`**. Undo with:
+
+`POST .../maintenance/rollback` body: `{ "run_id": "..." }`
+
+- Flag-only tasks (`reclassify_ambiguous`, `pattern_audit`) are always read-only.
 
 ### Add
 

@@ -203,6 +203,18 @@ export class VoltMemClient {
     );
   }
 
+  async maintenanceRollback(
+    runId: string,
+    options: UserOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const userId = this.requireUserId(options.userId);
+    return this.request<Record<string, unknown>>(
+      "POST",
+      `/v1/users/${encodeURIComponent(userId)}/maintenance/rollback`,
+      { body: { run_id: runId } },
+    );
+  }
+
   async maintenanceTasks(
     options: UserOptions = {},
   ): Promise<Array<{ name: string; description: string; interval: number }>> {

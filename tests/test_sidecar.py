@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 # Embeddings off for CI-fast runs (must be set before app lifespan).
 os.environ["VOLTMEM_EMBEDDINGS"] = "0"
+os.environ["VOLTMEM_MAINTENANCE"] = "0"
 os.environ.setdefault("VOLTMEM_PROFILE", "stylens")
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -156,6 +157,61 @@ def test_occasion_domain():
         assert r.json()["domain"] == "session_occasion"
 
 
+def test_maintenance_dry_run_gates_expire_cleanup():
+    """Default dry_run=false purges; dry_run=true previews only."""
+    with _client(VOLTMEM_DB_PATH=":memory:") as client:
+        add = client.post(
+            "/v1/users/eve/memories",
+            json={
+                "data": "Conference badge code 9911",
+                "expires_at": 1.0,
+            },
+        )
+        assert add.status_code == 200, add.text
+        mid = add.json()["id"]
+
+        preview = client.post(
+            "/v1/users/eve/maintenance/trigger",
+            json={"task": "expire_cleanup", "dry_run": True},
+        )
+        assert preview.status_code == 200, preview.text
+        body = preview.json()
+        assert body["dry_run"] is True
+        assert body["result"] == 1
+        assert body["run_id"]
+
+        still = client.get(f"/v1/users/eve/memories/{mid}")
+        assert still.status_code == 200
+
+        wet = client.post(
+            "/v1/users/eve/maintenance/trigger",
+            json={"task": "expire_cleanup"},  # dry_run defaults false
+        )
+        assert wet.status_code == 200, wet.text
+        assert wet.json()["dry_run"] is False
+        assert wet.json()["result"] == 1
+        run_id = wet.json()["run_id"]
+
+        gone = client.get(f"/v1/users/eve/memories/{mid}")
+        assert gone.status_code == 404
+
+        rb = client.post(
+            "/v1/users/eve/maintenance/rollback",
+            json={"run_id": run_id},
+        )
+        assert rb.status_code == 200, rb.text
+        assert rb.json()["restored"] == 1
+        back = client.get(f"/v1/users/eve/memories/{mid}")
+        assert back.status_code == 200
+
+        tasks = client.get("/v1/users/eve/maintenance/tasks")
+        assert tasks.status_code == 200
+        by_name = {t["name"]: t for t in tasks.json()}
+        assert by_name["expire_cleanup"]["mutates"] is True
+        assert by_name["consolidate"]["default_run_all"] is False
+        assert by_name["pattern_audit"]["mutates"] is False
+
+
 if __name__ == "__main__":
     tests = [
         test_health,
@@ -164,6 +220,7 @@ if __name__ == "__main__":
         test_api_key_required_when_set,
         test_clear_and_summary,
         test_occasion_domain,
+        test_maintenance_dry_run_gates_expire_cleanup,
     ]
     failed = 0
     for fn in tests:

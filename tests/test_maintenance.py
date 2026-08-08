@@ -105,7 +105,7 @@ def test_expire_cleanup_syncs_vector_index():
 
     mw = MaintenanceWindow(mem)
     mw.register("expire", expire_cleanup)
-    assert mw.run_once("expire") == 1
+    assert mw.run_once("expire")["result"] == 1
 
     hits = idx.search([1.0, 0.0], "default", top_k=10)
     hit_ids = {h[0] for h in hits}
@@ -155,8 +155,20 @@ def test_expire_cleanup_task():
     mem.write("dead", domain="transient_fact", expires_at=1.0)
     mw = MaintenanceWindow(mem)
     mw.register("expire", expire_cleanup)
-    deleted = mw.run_once("expire")
-    assert deleted == 1
+    assert mw.run_once("expire")["result"] == 1
+
+
+def test_expire_cleanup_dry_run_does_not_mutate():
+    mem = MemoryLayer(":memory:")
+    mem.write("dead", domain="transient_fact", expires_at=1.0)
+    mw = MaintenanceWindow(mem)
+    mw.register("expire", expire_cleanup)
+    would = mw.run_once("expire", dry_run=True)
+    assert would["result"] == 1
+    assert would["dry_run"] is True
+    active = mem._store.all_active()
+    assert len(active) == 1
+    assert active[0].content == "dead"
 
 
 def test_reclassify_ambiguous_flags_high_mismatch_domains():
@@ -166,7 +178,7 @@ def test_reclassify_ambiguous_flags_high_mismatch_domains():
     mem.observe("pref C", domain="core_preference", mismatch_magnitude=0.9)
     mw = MaintenanceWindow(mem)
     mw.register("reclassify", lambda ctx: reclassify_ambiguous(ctx, min_observations=1))
-    flags = mw.run_once("reclassify")
+    flags = mw.run_once("reclassify")["result"]
     assert len(flags) >= 1
     assert flags[0]["domain"] == "core_preference"
 
@@ -180,7 +192,7 @@ def test_pattern_audit_flags_accumulated_mismatches():
     mem._store.update(item)
     mw = MaintenanceWindow(mem)
     mw.register("pattern", pattern_audit)
-    flags = mw.run_once("pattern")
+    flags = mw.run_once("pattern")["result"]
     assert len(flags) == 1
     assert flags[0]["mismatch_count"] == 5
 
@@ -193,7 +205,7 @@ def test_consolidate_dry_run_does_not_mutate():
     mem._store.update(item)
     mw = MaintenanceWindow(mem)
     mw.register("consolidate", consolidate)
-    flags = mw.run_once("consolidate")
+    flags = mw.run_once("consolidate", dry_run=True)["result"]
     assert len(flags) == 1
     # Memory unchanged after dry run
     items = mem._active(domain="emotional_context")
@@ -207,8 +219,9 @@ def test_consolidate_real_run_reorganizes():
     item.mismatch_count = 3
     mem._store.update(item)
     mw = MaintenanceWindow(mem)
-    mw.register("consolidate", lambda ctx: consolidate(ctx, dry_run=False))
-    results = mw.run_once("consolidate")
+    mw.register("consolidate", consolidate)
+    out = mw.run_once("consolidate")
+    results = out["result"]
     assert len(results) == 1
     assert results[0]["result"] == "audited"
     items = mem._active(domain="emotional_context")
@@ -227,8 +240,11 @@ def test_consolidate_event_aware_flags_cofacets():
     mem.observe("drained", domain="emotional_context", mismatch_magnitude=0.18)
     mem.observe("great", domain="emotional_context", mismatch_magnitude=0.18)
     mw = MaintenanceWindow(mem)
-    mw.register("consolidate", lambda ctx: consolidate(ctx, dry_run=False, min_mismatch_count=3, event_aware=True))
-    results = mw.run_once("consolidate")
+    mw.register(
+        "consolidate",
+        lambda ctx: consolidate(ctx, min_mismatch_count=3, event_aware=True),
+    )
+    results = mw.run_once("consolidate")["result"]
     reorganized = [r for r in results if "mismatch_count" in r]
     cofacets = [r for r in results if "mismatch_count" not in r]
     assert len(reorganized) == 1
@@ -242,9 +258,51 @@ def test_run_all_executes_all_tasks():
     mw = MaintenanceWindow(mem)
     mw.register("expire", expire_cleanup)
     mw.register("pattern", pattern_audit)
-    results = mw.run_all()
-    assert results["expire"] is True
-    assert results["pattern"] is True
+    out = mw.run_all()
+    assert "expire" in out["results"]
+    assert "pattern" in out["results"]
+    assert out["run_id"]
+
+
+def test_rollback_maintenance_undoes_consolidate():
+    mem = MemoryLayer(":memory:")
+    mem.write("old", domain="emotional_context")
+    item = mem._active(domain="emotional_context")[0]
+    old_id = item.id
+    item.mismatch_count = 3
+    mem._store.update(item)
+    mw = MaintenanceWindow(mem)
+    mw.register("consolidate", consolidate)
+    out = mw.run_once("consolidate")
+    run_id = out["run_id"]
+    new_id = out["result"][0]["new_item_id"]
+    assert mem._active(domain="emotional_context")[0].content == "[consolidated] old"
+
+    summary = mem.rollback_maintenance(run_id)
+    assert summary["restored"] == 1
+    active = mem._active(domain="emotional_context")
+    assert len(active) == 1
+    assert active[0].id == old_id
+    assert active[0].content == "old"
+    retired = mem._store.get(new_id)
+    assert retired is not None
+    assert retired.superseded_by == old_id
+
+
+def test_rollback_maintenance_restores_purged():
+    mem = MemoryLayer(":memory:")
+    mem.write("dead", domain="transient_fact", expires_at=1.0)
+    mw = MaintenanceWindow(mem)
+    mw.register("expire", expire_cleanup)
+    out = mw.run_once("expire")
+    assert out["result"] == 1
+    assert mem._store.all_active() == []
+
+    summary = mem.rollback_maintenance(out["run_id"])
+    assert summary["restored"] == 1
+    active = mem._store.all_active()
+    assert len(active) == 1
+    assert active[0].content == "dead"
 
 
 def test_background_thread_runs_periodically():
@@ -306,12 +364,15 @@ if __name__ == "__main__":
         test_maintenance_window_registration,
         test_maintenance_window_unregister,
         test_expire_cleanup_task,
+        test_expire_cleanup_dry_run_does_not_mutate,
         test_reclassify_ambiguous_flags_high_mismatch_domains,
         test_pattern_audit_flags_accumulated_mismatches,
         test_consolidate_dry_run_does_not_mutate,
         test_consolidate_real_run_reorganizes,
         test_consolidate_event_aware_flags_cofacets,
         test_run_all_executes_all_tasks,
+        test_rollback_maintenance_undoes_consolidate,
+        test_rollback_maintenance_restores_purged,
         test_background_thread_runs_periodically,
         test_force_update_bypasses_escalation_math,
         test_force_update_false_uses_normal_math,

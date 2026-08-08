@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
+import time
 
 from .classifiers import (
     Classifier,
@@ -188,15 +189,34 @@ class Memory:
         *,
         source: str = "explicit_statement",
         extract: bool | None = None,
+        event_id: str | None = None,
+        modality: str | None = None,
+        expires_at: float | None = None,
+        ttl_seconds: float | None = None,
     ) -> Union[dict[str, Any], list[dict[str, Any]]]:
         """Store a fact or conversation turn(s).
 
         Accepts a plain string, one message dict ``{"role": ..., "content": ...}``,
         or a list of message dicts. For message lists, ``extract=True`` (default)
         pulls atomic user facts before storing.
+
+        Optional lifecycle fields (``event_id``, ``modality``, ``expires_at``,
+        ``ttl_seconds``) apply to plain-string writes.
         """
+        expires = expires_at
+        if expires is None and ttl_seconds is not None:
+            expires = time.time() + ttl_seconds
+
         if isinstance(data, str):
-            return self._format_write(self._layer.remember(data, source=source))
+            return self._format_write(
+                self._layer.remember(
+                    data,
+                    source=source,
+                    event_id=event_id,
+                    modality=modality,
+                    expires_at=expires,
+                )
+            )
         if isinstance(data, dict):
             return self._add_message(data, source=source)
         if isinstance(data, list):

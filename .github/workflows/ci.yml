@@ -34,7 +34,14 @@ jobs:
       - name: Run sidecar tests
         env:
           VOLTMEM_EMBEDDINGS: "0"
+          VOLTMEM_MAINTENANCE: "0"
         run: python tests/test_sidecar.py
+
+      - name: Run maintenance scheduler tests
+        env:
+          VOLTMEM_EMBEDDINGS: "0"
+          VOLTMEM_MAINTENANCE: "0"
+        run: python tests/test_maintenance_scheduler.py
 
       - name: Run vector index tests
         run: python tests/test_vector_index.py
