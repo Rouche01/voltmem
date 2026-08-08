@@ -41,7 +41,9 @@ Example — custom domains: `examples/custom_classifier.py`
 - [ ] **Automatic domain discovery** — infer new domains + priors from context (not just tune existing ones)
 - [ ] **Classification confidence** — low-confidence label → wider volatility band or human/audit path
 - [ ] **Deferred labeling** — store raw fact, assign domain on retrieval or after N observations
-- [ ] **Eval suite for classification** — labeled corpus per domain, measure mislabel rate
+- [x] **Eval suite for classification** — labeled corpus (`tests/fixtures/classification_corpus.json`, 230 items / 14 domains); heuristic baseline ≈84%; CI floors in `tests/test_classifiers.py`. Optional LLM pass still open.
+
+**Sleeptime note:** Keyword collisions are primarily a write-path fix. Nightly reclassify is a secondary maintenance path and must be scored against the corpus — see [SCHEDULE — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-is--isnt).
 
 ### Practical mitigation (production today)
 
@@ -321,6 +323,10 @@ Some facts have a **known shelf life** that domain volatility priors do not expr
 Volatility answers "how fast does this *kind* of fact usually go stale?"
 Optional TTL answers "this *specific* fact should not live past time T."
 
+Do not confuse with `transient_fact` (high \(V_d\)): that is soft, type-based aging for
+*undated* fleeting facts. TTL is a hard calendar end. Maintenance `expire_cleanup` only
+purges TTL expiry — see [SCHEDULE — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-is--isnt).
+
 Examples:
 
 - "User is in Berlin for a conference until Friday"
@@ -502,6 +508,21 @@ Fixing one without the others is incomplete:
 - Telemetry does not replace any of the above — it makes prior/threshold assumptions
   visible so fixes are evidence-driven
 
+### Sleeptime vs write-path (do not conflate)
+
+See also [SCHEDULE.md — What sleeptime is / isn't](SCHEDULE.md#what-sleeptime-is--isnt).
+
+- **Sleeptime primary:** emergent change (Problem 2) — pattern audits / consolidation on
+  accumulated weak mismatches that never crossed live θ
+- **Keyword collisions (Problem 1):** prefer write-path keyword / classifier fixes; nightly
+  reclassify is secondary and should be measured against
+  [`tests/fixtures/classification_corpus.json`](../tests/fixtures/classification_corpus.json)
+- **Transient / short-lived facts:** undated → high-\(V_d\) domain (`transient_fact`);
+  known end date → optional TTL (`expires_at`). Maintenance `expire_cleanup` only handles
+  the TTL case — it does not invent labels for undated fleeting facts
+- **Corpus ≈84% heuristic:** evidence that label errors are real and patterned — not a claim
+  that sleeptime “is for” collisions or transient facts
+
 ---
 
 ## Priority (suggested)
@@ -512,7 +533,7 @@ Fixing one without the others is incomplete:
 | P1 | Cumulative mismatch escalation | Done — see `CUMULATIVE_MISMATCH_ESCALATE` |
 | P1 | High-M explicit override (drift-safe) | Done — `explicit_theta_cap()` + `calibrate_escalation.py` |
 | P1 | Expand escalation eval + CI | Done — below/medium-band + cumulative probes |
-| P2 | Classification eval corpus | Measure Problem 1; needed before LLM classifier work |
+| P2 | Classification eval corpus | Done — 230 labeled items; heuristic baseline ≈84%; CI floors |
 | P2 | Prior calibration telemetry | Done — `domain_stats()` always on; optional log sink later |
 | P2 | Under-specified retrieval (Problem 3) | Done — specificity report + adaptive mix; answerability deferred |
 | P2 | Multi-facet `event_id` + multi-write (Problem 4) | Enabling API for non-chat agents; core math unchanged |

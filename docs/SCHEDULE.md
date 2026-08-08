@@ -25,6 +25,20 @@ The sleeptime compute insight reframes VoltMem's open problems: the real gap is 
 
 **Key insight:** The escalation math is reactive (new evidence → check threshold). Some changes are *emergent* (pattern builds over time → needs retrospective review). Maintenance windows catch what real-time thresholds miss.
 
+### What sleeptime is / isn't
+
+Keep write-path fixes and idle-path maintenance distinct — they solve different failure modes.
+
+| Concern | Prefer | Sleeptime role |
+|---|---|---|
+| **Emergent change** (weak mismatches that never cross live θ) | — | **Primary job** — `pattern_audit` / real `consolidate` |
+| **Keyword collisions** (e.g. `feel` → mood vs opinion) | Fix keywords / write-path classifier first | **Secondary** — `reclassify_ambiguous` with fuller context; score with the classification corpus |
+| **Undated fleeting facts** | Label as `transient_fact` (high \(V_d\)) so retrieval ages them out fast | Not a reclassify problem |
+| **Dated session facts** (“until Friday”) | Optional **TTL** (`expires_at` / `ttl_seconds`) | **`expire_cleanup`** only — purge after hard expiry |
+| **Classification corpus (~84% heuristic)** | Grades labels and future relabelers | Not the sleeptime engine; the **answer key** for whether reclassify helped |
+
+**One line:** Sleeptime is mostly for emergent change + cleanup; collisions → keywords first; transient → high \(V_d\) when undated, TTL when dated; the corpus measures Problem 1, it does not run at night.
+
 ---
 
 ## 2. What's Done (P0/P1 — Escalation Math)
@@ -83,19 +97,24 @@ These shipped in v0.2.2 and are confirmed stable:
 
 ---
 
-### 3.3 Classification Eval Corpus
+### 3.3 Classification Eval Corpus **[DONE — baseline]**
 
-**Why third:** Needed before any LLM classifier improvements. Gives us a labeled benchmark to measure whether maintenance-based relabeling (the eventual P2/P3 work) actually helps.
+**Why:** Needed before any LLM classifier improvements. Gives us a labeled benchmark to measure whether maintenance-based relabeling (the eventual P2/P3 work) actually helps.
 
-**Concrete tasks:**
+**Shipped:**
 
-1. Curate 200–500 labeled utterances across all 8 default domains
-2. Measure current heuristic + Ollama classifier accuracy per domain
-3. Identify collision cases (e.g., `"feel"` → emotion vs opinion)
-4. Export as simple JSON/CSV that tests can load without external deps
-5. CI: `pytest tests/test_classifiers.py` runs in <5s
+1. Labeled corpus: [`tests/fixtures/classification_corpus.json`](../tests/fixtures/classification_corpus.json) — **230** utterances across all **14** built-in domains (SCHEDULE originally said 8; corpus covers the full `DOMAIN_VOLATILITY` set)
+2. Loader + metrics: [`voltmem/classification_eval.py`](../voltmem/classification_eval.py)
+3. Baseline report: `python experiments/classification_baseline.py` — HeuristicClassifier ≈ **84%** overall (≈0% on `transient_fact`; keyword domains ≈ **90%+**)
+4. Collision cases tagged (`collision:feel`, etc.) — e.g. `"I feel that…"` gold=`opinion`, heuristic→`emotional_context`
+5. CI: `python tests/test_classifiers.py` (schema, accuracy floors, feel collision, &lt;5s)
 
-**Deferred:** Cloud LLM classifier (P2 but needs eval corpus first so we can justify the complexity).
+**Still open (not blocking the corpus):**
+
+- Optional Ollama / cloud LLM accuracy pass on the same fixture (local-only; not CI)
+- Raise floors after keyword fixes; grow corpus toward 500 if dogfood shows new collision classes
+
+**Deferred:** Cloud LLM classifier (needs this corpus first so we can justify the complexity).
 
 ---
 
@@ -133,10 +152,10 @@ Not a user-facing feature. The substrate that enables P2-sleeptime operations.
 
 ```
 Phase 1 — Enabling API (this cycle)
-├── 1.1 event_id on MemoryItem + store migration
-├── 1.2 add_event() + retrieve_by_event() API
-├── 1.3 expires_at on MemoryItem + retrieval filtering
-└── 1.4 Classification eval corpus (curate, measure baseline)
+├── 1.1 event_id on MemoryItem + store migration          ✅
+├── 1.2 add_event() + retrieve_by_event() API             ✅
+├── 1.3 expires_at on MemoryItem + retrieval filtering    ✅
+└── 1.4 Classification eval corpus (curate, measure)      ✅ baseline
 
 Phase 2 — Maintenance Launch (next cycle)
 ├── 2.1 MaintenanceWindow scaffold + task registry

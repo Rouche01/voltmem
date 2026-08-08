@@ -1,0 +1,1082 @@
+{
+  "version": 1,
+  "description": "Labeled utterances for VoltMem domain classification eval (Problem 1 / SCHEDULE 1.4). Gold labels are human intent; HeuristicClassifier may disagree on collision:* tags.",
+  "domains": [
+    "biographical",
+    "core_preference",
+    "current_project",
+    "current_task",
+    "emotional_context",
+    "location",
+    "long_term_goal",
+    "opinion",
+    "personality_trait",
+    "professional_context",
+    "relationship",
+    "skill",
+    "stated_preference",
+    "transient_fact"
+  ],
+  "n": 230,
+  "items": [
+    {
+      "text": "I am an introvert who needs quiet recovery time",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I'm extroverted and recharge around people",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I tend to overthink decisions before acting",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "My personality is pretty disciplined about routines",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I am patient with junior engineers",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I'm a night owl by nature",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I am organized to a fault",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I'm introverted in large groups",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I tend to avoid confrontation",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I am a careful planner, not impulsive",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "My personality skews analytical",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I'm an extrovert at conferences",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I tend to finish what I start",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I am patient when mentoring",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I'm a detail-oriented person",
+      "domain": "personality_trait"
+    },
+    {
+      "text": "I prefer concise answers over long essays",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I love dark mode in every app",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I hate being interrupted mid-flow",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I enjoy walking meetings",
+      "domain": "core_preference"
+    },
+    {
+      "text": "My favorite editor is Neovim",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I really like typed Python",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I dislike emoji in professional chat",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I prefer bullet lists to paragraphs",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I can't stand vague requirements",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I always want diagrams for architecture",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I never want autoplay video",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I love mechanical keyboards",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I hate cluttered dashboards",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I enjoy morning deep work",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I prefer async updates to meetings",
+      "domain": "core_preference"
+    },
+    {
+      "text": "I was born in Accra",
+      "domain": "biographical"
+    },
+    {
+      "text": "I grew up in Berlin",
+      "domain": "biographical"
+    },
+    {
+      "text": "My hometown is Lagos",
+      "domain": "biographical"
+    },
+    {
+      "text": "I'm originally from Nairobi",
+      "domain": "biographical"
+    },
+    {
+      "text": "English is my native language",
+      "domain": "biographical"
+    },
+    {
+      "text": "I was raised in a bilingual household",
+      "domain": "biographical"
+    },
+    {
+      "text": "My nationality is Ghanaian",
+      "domain": "biographical"
+    },
+    {
+      "text": "I grew up near the coast",
+      "domain": "biographical"
+    },
+    {
+      "text": "I was born in 1992",
+      "domain": "biographical"
+    },
+    {
+      "text": "I'm originally from the Midwest",
+      "domain": "biographical"
+    },
+    {
+      "text": "My hometown still feels like home",
+      "domain": "biographical"
+    },
+    {
+      "text": "I grew up speaking Twi at home",
+      "domain": "biographical"
+    },
+    {
+      "text": "I was raised by teachers",
+      "domain": "biographical"
+    },
+    {
+      "text": "Native language is English",
+      "domain": "biographical"
+    },
+    {
+      "text": "Originally from Kumasi",
+      "domain": "biographical"
+    },
+    {
+      "text": "My goal is to become a staff engineer",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I aspire to run my own lab someday",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I want to become fluent in Mandarin",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I dream of publishing open-source research",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "Long-term I want to teach",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "Someday I want to move into product",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "In five years I want to lead a team",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "My goal is financial independence",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I aspire to write a technical book",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I want to become an expert in memory systems",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "Long-term career goal: principal engineer",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I dream of starting a robotics company",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "Someday I'd like to live part-time abroad",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "My goal is to ship useful open source",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I aspire to mentor more juniors",
+      "domain": "long_term_goal"
+    },
+    {
+      "text": "I work at a small startup as a backend engineer",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My job is platform engineering",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I work as a research engineer",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My role is tech lead on the memory team",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I got hired as a senior developer last year",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My employer is a climate-tech company",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I was promoted to staff last quarter",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My job title is Machine Learning Engineer",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I work at Anthropic-adjacent tooling company",
+      "domain": "professional_context"
+    },
+    {
+      "text": "Company name is Volt Labs",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My role focuses on agent infrastructure",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I work as a contractor for two clients",
+      "domain": "professional_context"
+    },
+    {
+      "text": "Position at the company is IC5",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I got hired remotely in 2024",
+      "domain": "professional_context"
+    },
+    {
+      "text": "My job involves a lot of Python",
+      "domain": "professional_context"
+    },
+    {
+      "text": "I know how to write production FastAPI services",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm skilled at systems debugging",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm good at explaining complex ideas simply",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm an expert in SQLite performance tuning",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm proficient with TypeScript and Workers",
+      "domain": "skill"
+    },
+    {
+      "text": "I can code confidently in Rust for tools",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm fluent in SQL and query planning",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm learning Rust this year",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm skilled at incident response",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm good at reading research papers quickly",
+      "domain": "skill"
+    },
+    {
+      "text": "I know how to operate Kubernetes clusters",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm proficient with Docker and Compose",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm an expert in embedding retrieval tricks",
+      "domain": "skill"
+    },
+    {
+      "text": "I'm learning Japanese grammar",
+      "domain": "skill"
+    },
+    {
+      "text": "I can code well in Go for CLIs",
+      "domain": "skill"
+    },
+    {
+      "text": "My manager is Ada",
+      "domain": "relationship"
+    },
+    {
+      "text": "My colleague Sam owns the search stack",
+      "domain": "relationship"
+    },
+    {
+      "text": "My coworker Jordan reviews my PRs",
+      "domain": "relationship"
+    },
+    {
+      "text": "My teammate Priya handles design",
+      "domain": "relationship"
+    },
+    {
+      "text": "My friend Alex lives nearby",
+      "domain": "relationship"
+    },
+    {
+      "text": "My partner helps me stay accountable",
+      "domain": "relationship"
+    },
+    {
+      "text": "My spouse prefers quiet evenings",
+      "domain": "relationship"
+    },
+    {
+      "text": "My boss expects weekly updates",
+      "domain": "relationship"
+    },
+    {
+      "text": "My mentor taught me systems thinking",
+      "domain": "relationship"
+    },
+    {
+      "text": "My collaborator on the paper is Mei",
+      "domain": "relationship"
+    },
+    {
+      "text": "My co-worker handles on-call Mondays",
+      "domain": "relationship"
+    },
+    {
+      "text": "My friend from uni still codes with me",
+      "domain": "relationship"
+    },
+    {
+      "text": "My manager changed last month to Chris",
+      "domain": "relationship"
+    },
+    {
+      "text": "My teammate is out on parental leave",
+      "domain": "relationship"
+    },
+    {
+      "text": "My colleague introduced me to VoltMem ideas",
+      "domain": "relationship"
+    },
+    {
+      "text": "I'm working on the VoltMem maintenance window",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're building a sidecar for Workers clients",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm shipping the TypeScript client this week",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're migrating the store schema for event_id",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm developing a classification eval corpus",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're refactoring the retrieve path",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm working on prior calibration histograms",
+      "domain": "current_project"
+    },
+    {
+      "text": "The project is Room Scout robotics memory",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're building event-aware consolidate",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm shipping docs for sleeptime compute",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're developing the FastAPI sidecar auth",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm working on adaptive freshness mix",
+      "domain": "current_project"
+    },
+    {
+      "text": "The project involves LongMemEval slicing",
+      "domain": "current_project"
+    },
+    {
+      "text": "We're migrating embeddings to optional installs",
+      "domain": "current_project"
+    },
+    {
+      "text": "I'm building a dogfood path for stylens",
+      "domain": "current_project"
+    },
+    {
+      "text": "Short replies work better for me in chat",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Please keep examples minimal",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Default to Python over TypeScript when unsure",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Use European date formats with me",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Avoid sports metaphors in explanations",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Keep commit messages under 72 characters",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Assume I want tests with new modules",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "I'd rather have fewer abstractions",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Cite file paths when discussing code",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Skip motivational filler in answers",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Match the repo's existing style first",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Ask before adding new dependencies",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Prefer tables for comparisons",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Don't invent APIs that aren't in the repo",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "Keep the tone direct and technical",
+      "domain": "stated_preference"
+    },
+    {
+      "text": "I think SQLite is underrated for agent memory",
+      "domain": "opinion"
+    },
+    {
+      "text": "I believe retrieval freshness beats raw recall",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my opinion vector DBs are overused early",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my view sleep-time compute is the missing loop",
+      "domain": "opinion"
+    },
+    {
+      "text": "I think benchmarks without negative controls lie",
+      "domain": "opinion"
+    },
+    {
+      "text": "I believe domain priors beat one-size TTL",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my opinion chat-only memory is too narrow",
+      "domain": "opinion"
+    },
+    {
+      "text": "I think escalation math needs emergent audits",
+      "domain": "opinion"
+    },
+    {
+      "text": "I believe agents should forget the right things",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my view LongMemEval alone is not enough",
+      "domain": "opinion"
+    },
+    {
+      "text": "I think policy layers beat bigger context windows",
+      "domain": "opinion"
+    },
+    {
+      "text": "I believe mislabeled domains poison everything",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my opinion maintenance windows beat hot-path LLM calls",
+      "domain": "opinion"
+    },
+    {
+      "text": "I think cosine-only ranking goes stale",
+      "domain": "opinion"
+    },
+    {
+      "text": "In my view open-source memory needs honest limits",
+      "domain": "opinion"
+    },
+    {
+      "text": "I live in Berlin",
+      "domain": "location"
+    },
+    {
+      "text": "I'm living in Paris now",
+      "domain": "location"
+    },
+    {
+      "text": "I reside in Amsterdam",
+      "domain": "location"
+    },
+    {
+      "text": "I'm based in London",
+      "domain": "location"
+    },
+    {
+      "text": "I moved to Lisbon last year",
+      "domain": "location"
+    },
+    {
+      "text": "We're relocating to Munich",
+      "domain": "location"
+    },
+    {
+      "text": "I'm in Copenhagen this month",
+      "domain": "location"
+    },
+    {
+      "text": "I am in Tokyo for the conference",
+      "domain": "location"
+    },
+    {
+      "text": "I live near Tempelhof",
+      "domain": "location"
+    },
+    {
+      "text": "I'm based in Accra part-time",
+      "domain": "location"
+    },
+    {
+      "text": "I moved to a quieter neighborhood",
+      "domain": "location"
+    },
+    {
+      "text": "Living in a co-living space downtown",
+      "domain": "location"
+    },
+    {
+      "text": "I reside close to the office",
+      "domain": "location"
+    },
+    {
+      "text": "I'm in Berlin most weeks",
+      "domain": "location"
+    },
+    {
+      "text": "Based in the EU for tax reasons",
+      "domain": "location"
+    },
+    {
+      "text": "I feel exhausted after the on-call week",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "My mood is lighter today",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm stressed about the launch",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "Feeling anxious before the talk",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm happy with how the demo went",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm sad about leaving the team",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm excited about the new role",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm tired but functional",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "Feeling angry about the outage postmortem",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm overwhelmed by context switching",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "Burned out after three crunch weeks",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm burnt out and need a break",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "Feeling calm for once",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "My mood has been flat lately",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "I'm stressed but managing",
+      "domain": "emotional_context"
+    },
+    {
+      "text": "Today I'm reviewing the PR for purge sync",
+      "domain": "current_task"
+    },
+    {
+      "text": "Right now I'm writing the classification corpus",
+      "domain": "current_task"
+    },
+    {
+      "text": "Currently fixing the sidecar dry_run semantics",
+      "domain": "current_task"
+    },
+    {
+      "text": "This morning I'm updating SCHEDULE.md",
+      "domain": "current_task"
+    },
+    {
+      "text": "This afternoon I'm running voltmem_eval",
+      "domain": "current_task"
+    },
+    {
+      "text": "My to-do is wire stylens secrets",
+      "domain": "current_task"
+    },
+    {
+      "text": "Todo: push the sleeptime commits",
+      "domain": "current_task"
+    },
+    {
+      "text": "The task is document the maintenance API",
+      "domain": "current_task"
+    },
+    {
+      "text": "I'm reviewing competitor notes",
+      "domain": "current_task"
+    },
+    {
+      "text": "Right now fixing a flaky test",
+      "domain": "current_task"
+    },
+    {
+      "text": "Currently drafting the blog post v3",
+      "domain": "current_task"
+    },
+    {
+      "text": "Today's task is dogfood checklist",
+      "domain": "current_task"
+    },
+    {
+      "text": "This morning I'm in focus mode on evals",
+      "domain": "current_task"
+    },
+    {
+      "text": "I'm reviewing the TypeScript client types",
+      "domain": "current_task"
+    },
+    {
+      "text": "Right now packaging the Docker image",
+      "domain": "current_task"
+    },
+    {
+      "text": "The meeting is at 3pm today only",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Parking is free downstairs until Friday",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "The guest Wi-Fi password changed this morning",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Lunch is catered in room B for today",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "The elevator is out of service until Tuesday",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Office closed next Monday for the holiday",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Demo laptop is checked out until 5pm",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Temporary badge code is 48291",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "The vendor call slipped to Thursday",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Coffee machine is broken this week",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Desk 12 is reserved for the visitor",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Build queue is paused for an hour",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "The beta flag expires tonight",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Shuttle leaves at 18:10 today",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "Standup moved to Zoom just for today",
+      "domain": "transient_fact",
+      "tags": [
+        "hard_for_heuristic"
+      ],
+      "note": "Few keyword triggers; often defaults to stated_preference"
+    },
+    {
+      "text": "I feel that remote work is better for deep focus",
+      "domain": "opinion",
+      "tags": [
+        "collision:feel"
+      ],
+      "note": "feel triggers emotional_context before opinion's 'i feel that'... wait, 'i feel that' is opinion but 'feel' alone hits emotional first"
+    },
+    {
+      "text": "I feel that benchmarks without controls are misleading",
+      "domain": "opinion",
+      "tags": [
+        "collision:feel"
+      ],
+      "note": "substring 'feel' wins emotional_context over opinion"
+    },
+    {
+      "text": "I feel that the prior is too sticky",
+      "domain": "opinion",
+      "tags": [
+        "collision:feel"
+      ]
+    },
+    {
+      "text": "I feel like the docs should lead with examples",
+      "domain": "opinion",
+      "tags": [
+        "collision:feel"
+      ],
+      "note": "'feel like' is opinion-ish; heuristic maps to emotional_context"
+    },
+    {
+      "text": "I feel strongly that SQLite is enough",
+      "domain": "opinion",
+      "tags": [
+        "collision:feel"
+      ]
+    },
+    {
+      "text": "I feel happy about the release",
+      "domain": "emotional_context",
+      "tags": [
+        "collision:feel",
+        "control"
+      ],
+      "note": "genuinely emotional — heuristic should match gold"
+    },
+    {
+      "text": "I feel stressed about deadlines",
+      "domain": "emotional_context",
+      "tags": [
+        "collision:feel",
+        "control"
+      ]
+    },
+    {
+      "text": "I'm working on my job search materials",
+      "domain": "current_project",
+      "tags": [
+        "collision:work"
+      ],
+      "note": "'working on' hits current_project; 'job' alone isn't enough for professional"
+    },
+    {
+      "text": "My project manager approved the design",
+      "domain": "relationship",
+      "tags": [
+        "collision:project"
+      ],
+      "note": "'project' may steal from relationship (manager)"
+    },
+    {
+      "text": "I'm learning on the job at my company",
+      "domain": "skill",
+      "tags": [
+        "collision:learning"
+      ],
+      "note": "'learning' → skill; also contains job/company cues"
+    },
+    {
+      "text": "Today I prefer to ship the smaller PR",
+      "domain": "current_task",
+      "tags": [
+        "collision:prefer"
+      ],
+      "note": "'today' → current_task before prefer → core_preference"
+    },
+    {
+      "text": "I prefer to finish today's review first",
+      "domain": "core_preference",
+      "tags": [
+        "collision:today"
+      ],
+      "note": "prefer vs today order — today may win if 'today' appears"
+    },
+    {
+      "text": "I think I'm tired of this approach",
+      "domain": "emotional_context",
+      "tags": [
+        "collision:think-tired"
+      ],
+      "note": "opinion cue + tired emotional cue — gold is mood"
+    },
+    {
+      "text": "I believe my manager is right about scope",
+      "domain": "relationship",
+      "tags": [
+        "collision:believe"
+      ],
+      "note": "'i believe' → opinion; gold is relationship about manager"
+    },
+    {
+      "text": "I'm building a habit of being more patient",
+      "domain": "personality_trait",
+      "tags": [
+        "collision:building"
+      ],
+      "note": "'building' → current_project; gold is personality"
+    },
+    {
+      "text": "I live for deep work blocks",
+      "domain": "core_preference",
+      "tags": [
+        "collision:live"
+      ],
+      "note": "'i live' substring may hit location"
+    },
+    {
+      "text": "I'm in the middle of a career change",
+      "domain": "professional_context",
+      "tags": [
+        "collision:im-in"
+      ],
+      "note": "'i'm in' → location; gold is professional"
+    },
+    {
+      "text": "Right now I love typed configs",
+      "domain": "core_preference",
+      "tags": [
+        "collision:right-now"
+      ],
+      "note": "right now → current_task; love → core_preference"
+    },
+    {
+      "text": "My goal today is just to clear email",
+      "domain": "current_task",
+      "tags": [
+        "collision:goal-today"
+      ],
+      "note": "my goal → long_term_goal; today → current_task"
+    },
+    {
+      "text": "I work on open source in my free time",
+      "domain": "current_project",
+      "tags": [
+        "collision:work-on"
+      ],
+      "note": "'work on' ≈ working on → current_project; not professional_context"
+    }
+  ]
+}

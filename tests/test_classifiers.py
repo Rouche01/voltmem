@@ -1,7 +1,7 @@
-"""Tests for pluggable classifiers and DomainRegistry."""
+"""Tests for pluggable classifiers, DomainRegistry, and classification corpus."""
 
-import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,12 +9,22 @@ sys.path.insert(0, str(ROOT))
 
 from voltmem import (  # noqa: E402
     ChainedClassifier,
+    DOMAIN_VOLATILITY,
     DomainRegistry,
     HeuristicClassifier,
     KeywordClassifier,
     create_memory,
 )
 from voltmem import domains as dom  # noqa: E402
+from voltmem.classification_eval import (  # noqa: E402
+    evaluate_classifier,
+    load_corpus,
+)
+
+# Floors from experiments/classification_baseline.py (HeuristicClassifier ~84%).
+# Regression guard — raise after intentional keyword improvements.
+HEURISTIC_MIN_ACCURACY = 0.80
+HEURISTIC_MIN_ACCURACY_EXCL_TRANSIENT = 0.88
 
 
 def test_keyword_classifier_matches_custom_domain():
@@ -106,6 +116,57 @@ def test_legacy_extractor_kwarg_still_works():
         assert mem.layer._extractor is custom
 
 
+# ── SCHEDULE 1.4 — classification eval corpus ─────────────────────────────────
+
+def test_corpus_schema_and_coverage():
+    items = load_corpus()
+    assert len(items) >= 200
+    domains = {i.domain for i in items}
+    missing = set(DOMAIN_VOLATILITY) - domains
+    assert not missing, f"corpus missing domains: {sorted(missing)}"
+    assert any(i.is_collision for i in items), "expected collision:* tagged items"
+
+
+def test_heuristic_baseline_accuracy_floor():
+    clf = HeuristicClassifier()
+    result = evaluate_classifier(clf.classify_domain)
+    assert result.accuracy >= HEURISTIC_MIN_ACCURACY, (
+        f"heuristic accuracy {result.accuracy:.1%} < floor {HEURISTIC_MIN_ACCURACY:.0%}"
+    )
+    # transient_fact has no keyword map — exclude from the “keyword domains” floor
+    excl = [
+        i for i in load_corpus() if i.domain != "transient_fact"
+    ]
+    excl_result = evaluate_classifier(clf.classify_domain, excl)
+    assert excl_result.accuracy >= HEURISTIC_MIN_ACCURACY_EXCL_TRANSIENT, (
+        f"excl-transient accuracy {excl_result.accuracy:.1%} "
+        f"< floor {HEURISTIC_MIN_ACCURACY_EXCL_TRANSIENT:.0%}"
+    )
+
+
+def test_feel_collision_documented():
+    """'feel' substring beats opinion cues — corpus documents the known failure."""
+    clf = HeuristicClassifier()
+    text = "I feel that remote work is better for deep focus"
+    assert clf.classify_domain(text) == "emotional_context"
+    gold = next(i for i in load_corpus() if i.text == text)
+    assert gold.domain == "opinion"
+    assert any(t.startswith("collision:feel") for t in gold.tags)
+
+
+def test_feel_control_still_emotional():
+    clf = HeuristicClassifier()
+    assert clf.classify_domain("I feel happy about the release") == "emotional_context"
+
+
+def test_corpus_eval_runs_under_five_seconds():
+    clf = HeuristicClassifier()
+    t0 = time.perf_counter()
+    evaluate_classifier(clf.classify_domain)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 5.0, f"corpus eval took {elapsed:.2f}s"
+
+
 if __name__ == "__main__":
     tests = [
         test_keyword_classifier_matches_custom_domain,
@@ -115,6 +176,11 @@ if __name__ == "__main__":
         test_domain_registry_restored_on_close,
         test_domain_registry_custom_domain_classified,
         test_legacy_extractor_kwarg_still_works,
+        test_corpus_schema_and_coverage,
+        test_heuristic_baseline_accuracy_floor,
+        test_feel_collision_documented,
+        test_feel_control_still_emotional,
+        test_corpus_eval_runs_under_five_seconds,
     ]
     failed = 0
     for t in tests:
