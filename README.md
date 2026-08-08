@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
@@ -17,6 +17,16 @@ volatile memories rank lower at search time.
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
 **Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md)
+
+### What’s new in 0.3.1
+
+- **Real consolidate** — mismatch evidence log + heuristic/LLM summarizer; scheduled
+  in the sidecar (`VOLTMEM_CONSOLIDATE` / `VOLTMEM_CONSOLIDATE_INTERVAL`); skips
+  when no evidence
+- **Vector index `event_id`** — stored on upsert; optional search filter; legacy DB migration
+- **Evals** — multi-facet linked retrieve + independent stale@k/audit
+  (`tests/test_multi_facet_eval.py`); TTL haystack 0% past expiry
+  (`tests/test_ttl_haystack_eval.py`)
 
 ### What’s new in 0.3.0
 

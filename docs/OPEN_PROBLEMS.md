@@ -2,7 +2,7 @@
 
 Tracking doc from feedback and internal eval findings (Jul 2026).
 For reproduction commands see [RESEARCH.md](RESEARCH.md).
-Sleeptime / maintenance status: [SCHEDULE.md](SCHEDULE.md) (**0.3.0** substrate shipped).
+Sleeptime / maintenance status: [SCHEDULE.md](SCHEDULE.md) (**0.3.1** — real consolidate + harden evals).
 
 ---
 

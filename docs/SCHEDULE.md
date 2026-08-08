@@ -1,6 +1,6 @@
 # VoltMem Development Roadmap — Post-Sleeptime Compute Reframe
 
-**Version:** 0.3.0  
+**Version:** 0.3.1  
 **Date:** 2026-08-08  
 **Based on:** [Sleeptime Compute blog post](../blog-sleeptime-compute.md) + [OPEN_PROBLEMS.md](OPEN_PROBLEMS.md)
 
