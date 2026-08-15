@@ -88,6 +88,19 @@ def create_memory(
         When True, blend empirical per-domain volatility (from tracked
         confirm/mismatch/audit rates) into scoring. Write-path telemetry via
         ``domain_stats()`` is always recorded regardless of this flag.
+    escalation_mode : str
+        Forwarded to ``MemoryLayer``. ``"composite"`` (default),
+        ``"homeostatic"`` (``"current"`` is an alias), or ``"allostatic"``.
+    link_verifier : LinkVerifier, callable, ``"auto"``, or None
+        Forwarded to ``MemoryLayer``. ``"auto"`` (the layer default) attaches
+        a verifier for sleeptime ``reconcile_twins`` whenever
+        ``embeddings=True``. Live ``add()`` / ``remember()`` stay millisecond
+        unless ``verify_on_write=True``. Pass ``None`` to keep the threshold
+        ladder and skip sleeptime verification.
+    verify_on_write : bool
+        Forwarded to ``MemoryLayer``. Default off: grey frames insert on
+        write and wait for sleeptime. Set ``True`` to ask the verifier on
+        ``remember()`` / ``add()``.
     llm_extract : bool
         Deprecated — use ``fact_extractor="llm"``.
     llm_domain : bool

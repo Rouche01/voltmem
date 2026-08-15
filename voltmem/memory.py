@@ -44,14 +44,30 @@ from .vector_index import VectorIndex, create_vector_index
 from .extract import HeuristicExtractor
 from .store import MemoryStore
 from .discovery import VolatilityTracker
+from .verify import resolve_link_verifier
+from .structure import (
+    HeuristicStructuredExtractor,
+    join_structured,
+    facts_from_dicts,
+    facts_to_dicts,
+    normalize_attribute,
+    normalize_subject,
+)
 from .scoring import (
     staleness,
     retrieval_score,
     update_volatility_ema,
+    update_surprise_ema,
+    update_mismatch_expectation,
     protection_weight,
     escalation_decision,
     similarity_spread,
     freshness_mix,
+    normalize_escalation_mode,
+    recent_surprise,
+    surprise_mode_scale,
+    expected_mismatch,
+    mismatch_sigma,
 )
 
 
@@ -68,12 +84,17 @@ def memory_item_to_payload(item: MemoryItem) -> dict:
         "expires_at": item.expires_at,
         "repetition_count": item.repetition_count,
         "volatility_ema": item.volatility_ema,
+        "surprise_ema": item.surprise_ema,
+        "surprise_at": item.surprise_at,
+        "mismatch_ema": item.mismatch_ema,
+        "mismatch_var": item.mismatch_var,
         "mismatch_count": item.mismatch_count,
         "goal_delta": item.goal_delta,
         "created_at": item.created_at,
         "last_confirmed_at": item.last_confirmed_at,
         "last_audited_at": item.last_audited_at,
         "tags": list(item.tags),
+        "facts": list(item.facts or []),
         "superseded_by": item.superseded_by,
     }
 
@@ -90,12 +111,17 @@ def _memory_item_from_payload(payload: dict) -> MemoryItem:
         expires_at=payload.get("expires_at"),
         repetition_count=int(payload.get("repetition_count") or 1),
         volatility_ema=float(payload.get("volatility_ema") if payload.get("volatility_ema") is not None else -1.0),
+        surprise_ema=float(payload.get("surprise_ema") or 0.0),
+        surprise_at=float(payload.get("surprise_at") or 0.0),
+        mismatch_ema=float(payload.get("mismatch_ema") if payload.get("mismatch_ema") is not None else -1.0),
+        mismatch_var=float(payload.get("mismatch_var") if payload.get("mismatch_var") is not None else -1.0),
         mismatch_count=int(payload.get("mismatch_count") or 0),
         goal_delta=float(payload.get("goal_delta") or 0.0),
         created_at=float(payload.get("created_at") or 0.0),
         last_confirmed_at=float(payload.get("last_confirmed_at") or 0.0),
         last_audited_at=float(payload.get("last_audited_at") or 0.0),
         tags=list(payload.get("tags") or []),
+        facts=list(payload.get("facts") or []),
         superseded_by=payload.get("superseded_by"),
     )
 
@@ -145,6 +171,33 @@ class MemoryLayer:
         Tenant/user key. All reads and writes on this layer are scoped to this
         namespace so one database can serve many users. Use for_user() to get a
         lightweight view for another tenant without opening a second connection.
+    auto_discover : bool
+        When True, blend empirical per-domain volatility into scoring.
+    escalation_mode : str
+        ``"composite"`` (default) uses allostatic only for an explicit high-M
+        correction or an unexpected residual against a learned Ê; otherwise
+        homeostatic. ``"homeostatic"`` (``"current"`` is an alias) keeps
+        E_t · V_d / θ(V_d). ``"allostatic"`` drops V_d from E_t and scales
+        θ by recent surprise s(m).
+    escalation_v_exp : float, optional
+        Override the V_d exponent in E_t (1.0 = homeostatic, 0.0 = allostatic).
+    escalation_mode_scale : bool, optional
+        Override whether θ is scaled by s(m). Together with ``escalation_v_exp``
+        this allows ablating the two allostatic ingredients separately.
+    link_verifier : LinkVerifier, callable, ``"auto"``, or None
+        Precision half of linking. ``"auto"`` (default) attaches the local LLM
+        verifier when an embedder is present so sleeptime ``reconcile_twins``
+        can judge twins. Keyword-only layers stay on the threshold ladder.
+        Pass ``None`` to force the ladder and skip sleeptime verification.
+    verify_on_write : bool or None
+        When to ask the verifier. Default ``None`` means **sleeptime** for
+        ``"auto"`` (millisecond ``remember()``, 14B in ``reconcile_twins``)
+        and **write** when a verifier is passed in. Set ``True`` to ask on
+        grey ``remember()`` calls (no heuristic cards, neighbour above the
+        recall bar). A heuristic refusal never goes to the model.
+    link_recall_bar : float
+        Similarity floor for two-stage recall (default 0.20). Safe this low
+        only because the verifier has the final say.
     """
 
     def __init__(
@@ -160,16 +213,31 @@ class MemoryLayer:
         embed_fn: Optional[Callable[[str], list[float]]] = None,
         candidate_multiplier: int = 5,
         auto_discover: bool = False,
+        # Default: composite (mode_default_eval.py, 2026-08-15).
+        escalation_mode: str = "composite",
+        escalation_v_exp: float | None = None,
+        escalation_mode_scale: bool | None = None,
+        link_verifier: object | None = "auto",
+        verify_on_write: bool | None = None,
+        link_recall_bar: float = 0.20,
+        link_recall_top_k: int = 3,
+        ollama_url: str = "http://localhost:11434",
+        llm_model: str = "qwen2.5-coder:14b",
     ):
         self._store = MemoryStore(db_path)
         self.load = load
         self.goal_delta_default = goal_delta_default
         self.namespace = namespace
         self.auto_discover = auto_discover
+        self.escalation_mode = normalize_escalation_mode(escalation_mode)
+        self.escalation_v_exp = escalation_v_exp
+        self.escalation_mode_scale = escalation_mode_scale
         # Always track write-path actions for prior calibration telemetry;
         # auto_discover only controls whether empirical V_d is blended at score time.
         self._tracker = VolatilityTracker(self._store)
         self._similarity_fn = similarity_fn or self._similarity
+        if embed_fn is None:
+            embed_fn = getattr(self._similarity_fn, "embed", None)
         self._embed_fn = embed_fn
         self.candidate_multiplier = max(1, candidate_multiplier)
         if isinstance(vector_index, str):
@@ -186,6 +254,27 @@ class MemoryLayer:
         self._extractor = extractor or HeuristicExtractor(
             relate_similarity=relate_threshold)
         self.relate_threshold = relate_threshold
+        # Two-stage linking. Keyword-only layers stay on the threshold ladder.
+        # An embedder auto-attaches the local verifier for sleeptime twin
+        # reconciliation. Live ``remember()`` does not ask it unless
+        # verify_on_write is on (or a verifier was passed in).
+        self._link_verifier = resolve_link_verifier(
+            link_verifier,
+            has_embedder=self._embed_fn is not None,
+            ollama_url=ollama_url,
+            llm_model=llm_model,
+        )
+        self.link_recall_bar = link_recall_bar
+        self.link_recall_top_k = max(1, link_recall_top_k)
+        # Cheap write-path join for known frames (city, birth year, skill, job).
+        # An explicit verifier still runs as given; heuristic only intercepts
+        # the auto/ladder paths so tests that inject a verifier keep seeing it.
+        self._heuristic_extractor = HeuristicStructuredExtractor()
+        self._use_heuristic_link = link_verifier in ("auto", None, False)
+        if verify_on_write is None:
+            self.verify_on_write = link_verifier not in ("auto", None, False)
+        else:
+            self.verify_on_write = bool(verify_on_write)
 
     # ── multi-tenant ──────────────────────────────────────────────────────────
 
@@ -210,6 +299,9 @@ class MemoryLayer:
         view.goal_delta_default = self.goal_delta_default
         view.namespace = namespace
         view.auto_discover = self.auto_discover
+        view.escalation_mode = self.escalation_mode
+        view.escalation_v_exp = self.escalation_v_exp
+        view.escalation_mode_scale = self.escalation_mode_scale
         view._tracker = self._tracker
         view._similarity_fn = self._similarity_fn
         view._extractor = self._extractor
@@ -217,6 +309,12 @@ class MemoryLayer:
         view._vector_index = self._vector_index
         view._embed_fn = self._embed_fn
         view.candidate_multiplier = self.candidate_multiplier
+        view._link_verifier = self._link_verifier
+        view.verify_on_write = self.verify_on_write
+        view.link_recall_bar = self.link_recall_bar
+        view.link_recall_top_k = self.link_recall_top_k
+        view._heuristic_extractor = self._heuristic_extractor
+        view._use_heuristic_link = self._use_heuristic_link
         return view
 
     # ── primary write path ────────────────────────────────────────────────────
@@ -253,6 +351,7 @@ class MemoryLayer:
             created_at=now,
             last_confirmed_at=now,
         )
+        self._stamp_facts(item)
         self._store.insert(item)
         self._index_upsert(item)
         self._record_domain_observation("inserted", domain)
@@ -337,19 +436,31 @@ class MemoryLayer:
         #    blip overwrites an otherwise-stable fact.
         # Cap θ / cumulative overrides live in escalation_decision — do not
         # compare raw E_t > theta_t here or medium-stable domains stay stuck.
+        now = at_time if at_time is not None else time.time()
+
         if force_update:
             escalate, E_t, theta_t = True, 1.0, 0.0
         else:
             escalate, E_t, theta_t = escalation_decision(
-                scoring_item, mismatch_magnitude, source, gd, ld)
+                scoring_item, mismatch_magnitude, source, gd, ld,
+                mode=self.escalation_mode,
+                v_exp=self.escalation_v_exp,
+                mode_scale=self.escalation_mode_scale,
+                now=now)
 
         # ── now fold this observation into the volatility EMA (reliability-
         #    weighted, single update). Future decisions benefit from the learned
         #    volatility; the current decision does not move its own goalposts.
+        # Judge against the anticipation we had BEFORE this observation, then
+        # fold M into Ê/σ and the unexpected residual into surprise_ema.
+        # Updating anticipation first would let a spike explain itself away.
+        candidate.surprise_ema = update_surprise_ema(
+            candidate, mismatch_magnitude, source, now=now)
+        candidate.surprise_at = now
+        candidate.mismatch_ema, candidate.mismatch_var = update_mismatch_expectation(
+            candidate, mismatch_magnitude, source)
         candidate.volatility_ema = update_volatility_ema(
             candidate, mismatch_magnitude, source)
-
-        now = at_time if at_time is not None else time.time()
 
         if not force_update and mismatch_magnitude < 0.15:
             # low mismatch: this is a confirmation, not a conflict
@@ -399,6 +510,9 @@ class MemoryLayer:
             tags=tags or candidate.tags,
             repetition_count=1,
             volatility_ema=candidate.volatility_ema,  # carry forward EMA
+            surprise_ema=0.0,  # re-settle after absorbing the change
+            mismatch_ema=-1.0,  # new fact starts with the confirm prior
+            mismatch_var=-1.0,
             goal_delta=gd,
             event_id=event_id if event_id is not None else candidate.event_id,
             modality=modality if modality is not None else candidate.modality,
@@ -406,6 +520,7 @@ class MemoryLayer:
             created_at=now,
             last_confirmed_at=now,
         )
+        self._stamp_facts(new_item)
         self._store.insert(new_item)
 
         # link old → new
@@ -452,6 +567,54 @@ class MemoryLayer:
         mem.remember("Actually I moved to Paris")   # updates the location memory
         mem.remember("I prefer concise answers")
         """
+        if self._use_heuristic_link:
+            h_item, h_sim, h_kind = self._heuristic_match(text)
+            if h_kind == "hit":
+                return self.observe(
+                    content=text,
+                    domain=h_item.domain,
+                    mismatch_magnitude=self._extractor.mismatch(
+                        text, h_item.content, h_sim),
+                    source=source,
+                    tags=tags,
+                    at_time=at_time,
+                    event_id=event_id,
+                    modality=modality,
+                    expires_at=expires_at,
+                )
+            if h_kind == "keep_both":
+                return self._remember_insert(
+                    text, source, domain, tags, at_time,
+                    event_id, modality, expires_at)
+            # no_cards: grey / insert — never send a heuristic refusal to 14B.
+
+        if self.verify_on_write and self._link_verifier is not None:
+            verified, vsim, kind = self._verified_match(text)
+            if kind == "hit":
+                return self.observe(
+                    content=text,
+                    domain=verified.domain,
+                    mismatch_magnitude=self._extractor.mismatch(
+                        text, verified.content, vsim),
+                    source=source,
+                    tags=tags,
+                    at_time=at_time,
+                    event_id=event_id,
+                    modality=modality,
+                    expires_at=expires_at,
+                )
+            if kind in ("keep_both", "no_recall"):
+                return self._remember_insert(
+                    text, source, domain, tags, at_time,
+                    event_id, modality, expires_at)
+            # infra_fail: the ladder can still link a pair a dead model missed.
+
+        if self._link_verifier is not None and not self.verify_on_write:
+            # Sleeptime mode: grey frames insert. reconcile_twins asks later.
+            return self._remember_insert(
+                text, source, domain, tags, at_time,
+                event_id, modality, expires_at)
+
         match, sim = self._best_match_global(text, self.relate_threshold)
         if match is not None:
             mismatch = self._extractor.mismatch(text, match.content, sim)
@@ -485,6 +648,28 @@ class MemoryLayer:
         return self.write(
             text,
             domain=dom,
+            source=source,
+            tags=tags,
+            at_time=at_time,
+            event_id=event_id,
+            modality=modality,
+            expires_at=expires_at,
+        )
+
+    def _remember_insert(
+        self,
+        text: str,
+        source: str,
+        domain: str | None,
+        tags: list[str] | None,
+        at_time: float | None,
+        event_id: str | None,
+        modality: str | None,
+        expires_at: float | None,
+    ) -> WriteResult:
+        return self.write(
+            text,
+            domain=domain or self._extractor.classify_domain(text),
             source=source,
             tags=tags,
             at_time=at_time,
@@ -662,6 +847,7 @@ class MemoryLayer:
 
         Supports:
           * ``supersede`` — reactivate ``old_id``, retire ``new_id`` (when still valid)
+          * ``retire`` — reactivate ``old_id`` without touching the keeper
           * ``purge`` — re-insert the snapshotted item
 
         Returns a summary dict. Raises ``KeyError`` if the run is missing or
@@ -712,6 +898,26 @@ class MemoryLayer:
                 self._index_upsert(old)
                 restored += 1
                 retired += 1
+            elif atype == "retire":
+                old_id = action.get("old_id")
+                keeper_id = action.get("new_id")
+                if not old_id or not keeper_id:
+                    skipped.append({**action, "reason": "missing ids"})
+                    continue
+                old = self._store.get(old_id)
+                if old is None:
+                    skipped.append({**action, "reason": "item missing"})
+                    continue
+                if old.namespace != self.namespace:
+                    skipped.append({**action, "reason": "namespace mismatch"})
+                    continue
+                if old.superseded_by != keeper_id:
+                    skipped.append({**action, "reason": "old item no longer points at keeper"})
+                    continue
+                old.superseded_by = None
+                self._store.update(old)
+                self._index_upsert(old)
+                restored += 1
             elif atype == "purge":
                 payload = action.get("payload") or {}
                 item_id = action.get("old_id") or payload.get("id")
@@ -764,9 +970,18 @@ class MemoryLayer:
             "protection_weight": prot,
             "staleness": round(stale, 4),
             "mismatch_count": item.mismatch_count,
+            "surprise_ema": round(item.surprise_ema, 4),
+            "expected_mismatch": round(expected_mismatch(item), 4),
+            "mismatch_sigma": round(mismatch_sigma(item), 4),
+            "recent_surprise": round(recent_surprise(item, now), 4),
+            "mode_scale": round(surprise_mode_scale(item, now), 4),
+            "escalation_mode": self.escalation_mode,
+            "link_verifier": self._link_verifier is not None,
+            "verify_on_write": self.verify_on_write,
             "active": item.is_active,
             "age_days": round((now - item.created_at) / 86400, 2),
             "days_since_confirmed": round((now - item.last_confirmed_at) / 86400, 2),
+            "facts": list(item.facts or []),
         }
         stats = self._tracker.get_stats(self.namespace, item.domain)
         if stats is not None:
@@ -956,6 +1171,51 @@ class MemoryLayer:
 
         return None, sim
 
+    def _verified_match(
+        self, content: str
+    ) -> tuple[Optional[MemoryItem], float, str]:
+        """Two-stage link: recall cheaply and widely, then let the verifier judge.
+
+        Stage 1 takes the top-k candidates above ``link_recall_bar`` — a bar low
+        enough that recall is near-perfect (27/28 on held-out must-link pairs at
+        0.20 with embeddings), which is only safe because stage 2 has the final
+        say. Stage 2 asks the verifier in descending similarity order and takes
+        the first agreement, so the most likely candidate is charged for first.
+
+        Returns ``(item, similarity, kind)`` where kind is:
+
+        * ``hit`` — verifier said UPDATE
+        * ``keep_both`` — at least one live verdict was KEEP_BOTH (do not
+          fall through to the ladder; that is how false merges happen)
+        * ``no_recall`` — nothing cleared the recall bar
+        * ``infra_fail`` — every ask errored; fall through to the ladder
+        """
+        scored = sorted(
+            ((self._similarity_fn(content, it.content), it)
+             for it in self._active()),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        if not scored:
+            return None, 0.0, "no_recall"
+        asked = 0
+        failed = 0
+        for sim, item in scored[:self.link_recall_top_k]:
+            if sim < self.link_recall_bar:
+                break
+            asked += 1
+            before = int(getattr(self._link_verifier, "failures", 0) or 0)
+            if self._link_verifier.verify(content, item.content, item.domain):
+                return item, sim, "hit"
+            after = int(getattr(self._link_verifier, "failures", 0) or 0)
+            if after > before:
+                failed += 1
+        if asked == 0:
+            return None, scored[0][0], "no_recall"
+        if failed == asked:
+            return None, scored[0][0], "infra_fail"
+        return None, scored[0][0], "keep_both"
+
     def _best_match_global(
         self, content: str, min_similarity: float
     ) -> tuple[Optional[MemoryItem], float]:
@@ -974,6 +1234,65 @@ class MemoryLayer:
         if best_item is not None and best_sim >= min_similarity:
             return best_item, best_sim
         return None, best_sim
+
+    def _stamp_facts(self, item: MemoryItem, text: str | None = None) -> None:
+        facts = self._heuristic_extractor.extract(
+            text if text is not None else item.content)
+        item.facts = facts_to_dicts(facts)
+
+    def _facts_for(self, item: MemoryItem) -> list:
+        """Persisted cards, with a one-shot backfill for pre-SAV rows."""
+        if item.facts:
+            return facts_from_dicts(item.facts)
+        got = self._heuristic_extractor.extract(item.content)
+        if got:
+            item.facts = facts_to_dicts(got)
+            self._store.update(item)
+        return got
+
+    def _heuristic_match(
+        self, content: str
+    ) -> tuple[Optional[MemoryItem], float, str]:
+        """Join known-frame cards among same-subject items.
+
+        Cosine is not the recall gate here — subject overlap is (the Graphiti
+        cut). Attribute match still happens inside ``join_structured``.
+
+        ``hit`` — conservative join said UPDATE.
+        ``keep_both`` — the new statement had cards and no candidate joined.
+        ``no_cards`` — unrecognised frame; caller falls through.
+        """
+        new_facts = self._heuristic_extractor.extract(content)
+        if not new_facts:
+            return None, 0.0, "no_cards"
+        new_subjects = {normalize_subject(f.subject) for f in new_facts}
+        new_pairs = {
+            (normalize_subject(f.subject), normalize_attribute(f.attribute))
+            for f in new_facts
+        }
+        candidates: list[tuple[MemoryItem, list, int]] = []
+        for item in self._active():
+            stored_facts = self._facts_for(item)
+            if not stored_facts:
+                continue
+            stored_subjects = {
+                normalize_subject(f.subject) for f in stored_facts
+            }
+            if not (stored_subjects & new_subjects):
+                continue
+            shared_attr = any(
+                (normalize_subject(f.subject),
+                 normalize_attribute(f.attribute)) in new_pairs
+                for f in stored_facts
+            )
+            candidates.append((item, stored_facts, 0 if shared_attr else 1))
+        candidates.sort(
+            key=lambda row: (row[2], -row[0].last_confirmed_at))
+        for item, stored_facts, _rank in candidates:
+            if join_structured(stored_facts, new_facts, content, item.content):
+                sim = self._similarity_fn(content, item.content)
+                return item, sim, "hit"
+        return None, 0.0, "keep_both"
 
     @staticmethod
     def _similarity(query: str, content: str) -> float:

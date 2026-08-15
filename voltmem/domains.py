@@ -148,6 +148,10 @@ class MemoryItem:
     # Equation terms — updated over time
     repetition_count: int   = 1             # C: how many times confirmed
     volatility_ema:   float = -1.0          # V_d EMA; -1 means use domain prior
+    surprise_ema:     float = 0.0           # recent unexpected residual; 0 = settled
+    surprise_at:      float = 0.0           # when surprise_ema was last updated
+    mismatch_ema:     float = -1.0          # Ê: expected mismatch size; -1 = prior
+    mismatch_var:     float = -1.0          # running variance of mismatch; -1 = prior
     mismatch_count:   int   = 0             # cumulative mismatch events
     goal_delta:       float = 0.0           # G_t: positive = helps goal, neg = hurts
 
@@ -158,6 +162,7 @@ class MemoryItem:
 
     # Metadata
     tags:             list[str] = field(default_factory=list)
+    facts:            list[dict] = field(default_factory=list)  # SAV cards
     superseded_by:    Optional[str] = None  # id of item that replaced this one
 
     @property

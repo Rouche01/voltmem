@@ -39,12 +39,17 @@ CREATE TABLE IF NOT EXISTS memories (
     source            TEXT NOT NULL,
     repetition_count  INTEGER DEFAULT 1,
     volatility_ema    REAL    DEFAULT -1.0,
+    surprise_ema      REAL    DEFAULT 0.0,
+    surprise_at       REAL    DEFAULT 0.0,
+    mismatch_ema      REAL    DEFAULT -1.0,
+    mismatch_var      REAL    DEFAULT -1.0,
     mismatch_count    INTEGER DEFAULT 0,
     goal_delta        REAL    DEFAULT 0.0,
     created_at        REAL    NOT NULL,
     last_confirmed_at REAL    NOT NULL,
     last_audited_at   REAL    DEFAULT 0.0,
     tags              TEXT    DEFAULT '[]',
+    facts             TEXT    DEFAULT '[]',
     superseded_by     TEXT    DEFAULT NULL,
     namespace         TEXT    NOT NULL DEFAULT 'default',
     event_id          TEXT    DEFAULT NULL,
@@ -101,6 +106,20 @@ CREATE INDEX IF NOT EXISTS idx_mismatch_evidence_ns
 """
 
 
+def _parse_facts(raw) -> list[dict]:
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [x for x in data if isinstance(x, dict)]
+
+
 def _row_to_item(row: sqlite3.Row) -> MemoryItem:
     keys = row.keys()
     return MemoryItem(
@@ -114,12 +133,17 @@ def _row_to_item(row: sqlite3.Row) -> MemoryItem:
         expires_at=row["expires_at"] if "expires_at" in keys else None,
         repetition_count=row["repetition_count"],
         volatility_ema=row["volatility_ema"],
+        surprise_ema=row["surprise_ema"] if "surprise_ema" in keys else 0.0,
+        surprise_at=row["surprise_at"] if "surprise_at" in keys else 0.0,
+        mismatch_ema=row["mismatch_ema"] if "mismatch_ema" in keys else -1.0,
+        mismatch_var=row["mismatch_var"] if "mismatch_var" in keys else -1.0,
         mismatch_count=row["mismatch_count"],
         goal_delta=row["goal_delta"],
         created_at=row["created_at"],
         last_confirmed_at=row["last_confirmed_at"],
         last_audited_at=row["last_audited_at"],
         tags=json.loads(row["tags"]),
+        facts=_parse_facts(row["facts"] if "facts" in keys else []),
         superseded_by=row["superseded_by"],
     )
 
@@ -160,6 +184,26 @@ class MemoryStore:
             self._conn.execute(
                 "ALTER TABLE memories ADD COLUMN expires_at "
                 "REAL DEFAULT NULL")
+        if "surprise_ema" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN surprise_ema "
+                "REAL NOT NULL DEFAULT 0.0")
+        if "surprise_at" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN surprise_at "
+                "REAL NOT NULL DEFAULT 0.0")
+        if "mismatch_ema" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN mismatch_ema "
+                "REAL NOT NULL DEFAULT -1.0")
+        if "mismatch_var" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN mismatch_var "
+                "REAL NOT NULL DEFAULT -1.0")
+        if "facts" not in cols:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN facts "
+                "TEXT NOT NULL DEFAULT '[]'")
         ds_cols = {
             r[1] for r in self._conn.execute("PRAGMA table_info(domain_stats)")
         }
@@ -219,15 +263,19 @@ class MemoryStore:
         self._conn.execute("""
             INSERT INTO memories (
                 id, content, domain, source,
-                repetition_count, volatility_ema, mismatch_count, goal_delta,
+                repetition_count, volatility_ema, surprise_ema, surprise_at,
+                mismatch_ema, mismatch_var,
+                mismatch_count, goal_delta,
                 created_at, last_confirmed_at, last_audited_at,
-                tags, superseded_by, namespace,
+                tags, facts, superseded_by, namespace,
                 event_id, modality, expires_at
             ) VALUES (
                 :id, :content, :domain, :source,
-                :repetition_count, :volatility_ema, :mismatch_count, :goal_delta,
+                :repetition_count, :volatility_ema, :surprise_ema, :surprise_at,
+                :mismatch_ema, :mismatch_var,
+                :mismatch_count, :goal_delta,
                 :created_at, :last_confirmed_at, :last_audited_at,
-                :tags, :superseded_by, :namespace,
+                :tags, :facts, :superseded_by, :namespace,
                 :event_id, :modality, :expires_at
             )""", {
             "id": item.id,
@@ -236,12 +284,17 @@ class MemoryStore:
             "source": item.source,
             "repetition_count": item.repetition_count,
             "volatility_ema": item.volatility_ema,
+            "surprise_ema": item.surprise_ema,
+            "surprise_at": item.surprise_at,
+            "mismatch_ema": item.mismatch_ema,
+            "mismatch_var": item.mismatch_var,
             "mismatch_count": item.mismatch_count,
             "goal_delta": item.goal_delta,
             "created_at": item.created_at,
             "last_confirmed_at": item.last_confirmed_at,
             "last_audited_at": item.last_audited_at,
             "tags": json.dumps(item.tags),
+            "facts": json.dumps(item.facts or []),
             "superseded_by": item.superseded_by,
             "namespace": item.namespace,
             "event_id": item.event_id,
@@ -257,11 +310,16 @@ class MemoryStore:
                 content=:content, domain=:domain, source=:source,
                 repetition_count=:repetition_count,
                 volatility_ema=:volatility_ema,
+                surprise_ema=:surprise_ema,
+                surprise_at=:surprise_at,
+                mismatch_ema=:mismatch_ema,
+                mismatch_var=:mismatch_var,
                 mismatch_count=:mismatch_count,
                 goal_delta=:goal_delta,
                 last_confirmed_at=:last_confirmed_at,
                 last_audited_at=:last_audited_at,
                 tags=:tags,
+                facts=:facts,
                 superseded_by=:superseded_by,
                 event_id=:event_id,
                 modality=:modality,
@@ -274,11 +332,16 @@ class MemoryStore:
             "source": item.source,
             "repetition_count": item.repetition_count,
             "volatility_ema": item.volatility_ema,
+            "surprise_ema": item.surprise_ema,
+            "surprise_at": item.surprise_at,
+            "mismatch_ema": item.mismatch_ema,
+            "mismatch_var": item.mismatch_var,
             "mismatch_count": item.mismatch_count,
             "goal_delta": item.goal_delta,
             "last_confirmed_at": item.last_confirmed_at,
             "last_audited_at": item.last_audited_at,
             "tags": json.dumps(item.tags),
+            "facts": json.dumps(item.facts or []),
             "superseded_by": item.superseded_by,
             "event_id": item.event_id,
             "modality": item.modality,

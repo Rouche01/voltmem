@@ -1,8 +1,9 @@
 """Background maintenance scheduler for the HTTP sidecar.
 
-Runs due tasks (expire_cleanup, flag audits, consolidate) on a daemon
-thread so HTTP request handlers are not blocked. Set ``VOLTMEM_CONSOLIDATE=0``
-to leave consolidate out of the daemon while keeping manual trigger.
+Runs due tasks (expire_cleanup, flag audits, consolidate, reconcile_twins)
+on a daemon thread so HTTP request handlers are not blocked. Set
+``VOLTMEM_CONSOLIDATE=0`` or ``VOLTMEM_RECONCILE_TWINS=0`` to leave those
+out of the daemon while keeping manual trigger.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from voltmem.maintenance import (
     expire_cleanup,
     pattern_audit,
     reclassify_ambiguous,
+    reconcile_twins_default,
 )
 
 if TYPE_CHECKING:
@@ -54,6 +56,8 @@ class SidecarMaintenanceScheduler:
         reclassify_interval: float | None = None,
         consolidate_interval: float | None = None,
         consolidate_enabled: bool | None = None,
+        reconcile_interval: float | None = None,
+        reconcile_enabled: bool | None = None,
     ) -> None:
         self._pool = pool
         self._check_interval = (
@@ -86,6 +90,16 @@ class SidecarMaintenanceScheduler:
             if consolidate_enabled is not None
             else _env_bool("VOLTMEM_CONSOLIDATE", True)
         )
+        self._reconcile_interval = (
+            reconcile_interval
+            if reconcile_interval is not None
+            else _env_float("VOLTMEM_RECONCILE_INTERVAL", 86400.0)
+        )
+        self._reconcile_enabled = (
+            reconcile_enabled
+            if reconcile_enabled is not None
+            else _env_bool("VOLTMEM_RECONCILE_TWINS", True)
+        )
         self._windows: dict[str, MaintenanceWindow] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -114,6 +128,12 @@ class SidecarMaintenanceScheduler:
                     "consolidate",
                     consolidate,
                     interval=self._consolidate_interval,
+                )
+            if self._reconcile_enabled:
+                mw.register(
+                    "reconcile_twins",
+                    reconcile_twins_default,
+                    interval=self._reconcile_interval,
                 )
             self._windows[user_id] = mw
             return mw
@@ -156,7 +176,8 @@ class SidecarMaintenanceScheduler:
         print(
             "[sidecar-maintenance] daemon started "
             f"(check={self._check_interval}s expire={self._expire_interval}s"
-            f" consolidate={self._consolidate_interval if self._consolidate_enabled else 'off'}s)"
+            f" consolidate={self._consolidate_interval if self._consolidate_enabled else 'off'}s"
+            f" reconcile={self._reconcile_interval if self._reconcile_enabled else 'off'}s)"
         )
 
     def stop(self, timeout: float = 5.0) -> None:

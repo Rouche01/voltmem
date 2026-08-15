@@ -23,6 +23,7 @@ class MemoryPool:
         *,
         embeddings: bool = True,
         classifier: Classifier | None = None,
+        verify_on_write: bool = False,
     ) -> None:
         self._lock = threading.Lock()
         self._cache: dict[str, Memory] = {}
@@ -34,6 +35,7 @@ class MemoryPool:
             user_id="__sidecar__",
             embeddings=embeddings,
             classifier=clf,
+            verify_on_write=verify_on_write,
         )
         # Same classifier the layer uses — keeps message-list extract aligned.
         layer_clf = self._root.layer._extractor

@@ -108,7 +108,7 @@ system = f"What you know about this user:\n{context}"
 
 | Method | Description |
 |---|---|
-| `create_memory(db, user_id)` | Factory with auto-detected embeddings + vector index |
+| `create_memory(db, user_id)` | Factory with auto-detected embeddings, vector index, and two-stage `remember()` linking |
 | `Memory.add(text \| messages)` | Store a fact; slot-aware linking updates related memories |
 | `Memory.search(query, limit=5)` | ANN candidates + volatility re-rank (relevance + freshness; adaptive mix on similarity plateaus) |
 | `Memory.domain_stats()` | Per-domain prior calibration telemetry (audit / mismatch / confirm rates) |
@@ -121,6 +121,13 @@ Advanced: `mem.layer` exposes `MemoryLayer` for low-level `observe()` / `write()
 `create_memory(..., vector_index="auto")` enables a SQLite embedding index when an
 embedder is present (`"off"` restores full-scan retrieval). VoltMem always applies
 volatility re-ranking on top of vector candidates — not raw ANN results.
+
+With embeddings on (the `create_memory` default), a local verifier is attached
+for sleeptime `reconcile_twins`. Live `remember()` / `add()` use millisecond
+heuristic cards and insert grey frames as twins. Pass `verify_on_write=True`
+to ask the verifier on write. Keyword-only layers (`embeddings=False`, or
+`MemoryLayer()` with no embedder) keep the threshold ladder. Pass
+`link_verifier=None` to force the ladder even with embeddings.
 
 ```python
 stats = mem.domain_stats()

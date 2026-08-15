@@ -176,12 +176,17 @@ def _got_ur(action):
     return "U" if action_is_update(action) else "R"
 
 
-def run_escalation(profile):
+def run_escalation(profile, escalation_mode="composite", v_exp=None, mode_scale=None):
     correct = 0
     rows = []
+    layer_kwargs = dict(
+        escalation_mode=escalation_mode,
+        escalation_v_exp=v_exp,
+        escalation_mode_scale=mode_scale,
+    )
     with volatility_profile(profile):
         for (domain, base, obs, mm, src, expected, note) in ESCALATION_PROBES:
-            with MemoryLayer(":memory:") as mem:
+            with MemoryLayer(":memory:", **layer_kwargs) as mem:
                 mem.write(base, domain=domain)
                 res = mem.observe(obs, domain=domain, mismatch_magnitude=mm,
                                   source=src)
@@ -191,7 +196,7 @@ def run_escalation(profile):
                 rows.append((domain, expected, got, ok, res.action, note))
 
         for (domain, base, steps, note) in CUMULATIVE_ESCALATION_PROBES:
-            with MemoryLayer(":memory:") as mem:
+            with MemoryLayer(":memory:", **layer_kwargs) as mem:
                 mem.write(base, domain=domain)
                 step_ok = True
                 last_action = last_expected = last_got = None
@@ -225,6 +230,234 @@ def run_calibration_footprint():
                     mem.observe(
                         obs, domain=domain, mismatch_magnitude=mm, source=src)
             return mem.domain_stats()
+
+
+# ── Battery C: recency-shift (allostatic diagnostic) ──────────────────────────
+# Entrench with confirms, optionally log below-threshold mismatches, then a real
+# explicit change. Current misses high-C professional_context (E_t is crushed
+# before the N=3 cliff). Allostatic recovers it by dropping V_d from E_t and
+# lowering θ via s(m), without flipping core_preference (negative control).
+
+RECENCY_SHIFT_PROBES = [
+    {
+        "name": "noisy-then-shift professional",
+        "domain": "professional_context",
+        "base": "User works as a data analyst",
+        "n_confirms": 5,
+        "n_mismatch": 2,
+        "final_obs": "User explicitly said they changed careers and now work as a nurse",
+        "final_mm": 0.90,
+        "final_src": "explicit_statement",
+        "want_homeostatic": "R",
+        "want_allostatic": "U",
+        "note": "diagnostic: reopen after recent surprise",
+    },
+    {
+        "name": "noisy-then-shift preference",
+        "domain": "core_preference",
+        "base": "User prefers concise, direct answers",
+        "n_confirms": 5,
+        "n_mismatch": 2,
+        "final_obs": "User explicitly said they now prefer long, detailed explanations",
+        "final_mm": 0.90,
+        "final_src": "explicit_statement",
+        "want_homeostatic": "R",
+        "want_allostatic": "R",
+        "note": "negative control: very-stable stays closed",
+    },
+    {
+        "name": "quiet-then-shift professional",
+        "domain": "professional_context",
+        "base": "User works as a data analyst",
+        "n_confirms": 5,
+        "n_mismatch": 0,
+        "final_obs": "User explicitly said they changed careers and now work as a nurse",
+        "final_mm": 0.90,
+        "final_src": "explicit_statement",
+        "want_homeostatic": "R",
+        "want_allostatic": "U",
+        "note": "quiet then explicit: dropping V_d from E_t recovers the change",
+    },
+]
+
+
+def _run_recency_probe(probe, escalation_mode, v_exp=None, mode_scale=None):
+    with MemoryLayer(
+        ":memory:",
+        escalation_mode=escalation_mode,
+        escalation_v_exp=v_exp,
+        escalation_mode_scale=mode_scale,
+    ) as mem:
+        mem.write(probe["base"], domain=probe["domain"])
+        for i in range(probe["n_confirms"]):
+            mem.observe(
+                f"{probe['base']} (still true {i})",
+                domain=probe["domain"],
+                mismatch_magnitude=0.05,
+                source="explicit_statement",
+            )
+        for i in range(probe["n_mismatch"]):
+            mem.observe(
+                f"weak counter-signal {i}",
+                domain=probe["domain"],
+                mismatch_magnitude=0.65,
+                source="weak_inference",
+            )
+        res = mem.observe(
+            probe["final_obs"],
+            domain=probe["domain"],
+            mismatch_magnitude=probe["final_mm"],
+            source=probe["final_src"],
+        )
+        return _got_ur(res.action), res.action
+
+
+def run_recency_shift():
+    rows = []
+    for probe in RECENCY_SHIFT_PROBES:
+        got_c, act_c = _run_recency_probe(probe, "homeostatic")
+        got_a, act_a = _run_recency_probe(probe, "allostatic")
+        ok_c = got_c == probe["want_homeostatic"]
+        ok_a = got_a == probe["want_allostatic"]
+        rows.append((probe, got_c, act_c, ok_c, got_a, act_a, ok_a))
+    return rows
+
+
+# ── Battery D: weak slow burn (isolates s(m)) ─────────────────────────────────
+# Battery C could not test s(m): every probe ends in an explicit M=0.90
+# statement, which clears the medium-band θ-cap whatever s(m) does. The
+# ablation confirmed s(m) changed no Battery C outcome.
+#
+# This battery removes both shortcuts. Every observation is a WEAK inference
+# (R=0.4), so:
+#   * M < EXPLICIT_OVERRIDE_M and the source is not explicit → no θ-cap, and
+#   * R < SOURCE_RELIABILITY["strong_inference"] → the cumulative N-strike
+#     override can never fire either.
+# Nothing except s(m) can reopen the bar. After residual surprise (r_t =
+# |M − Ê| / σ) replaced raw M in the EMA, a constant weak stream becomes
+# *predicted* and no longer reopens — that is the first-test finding, not a
+# regression of the controls. Catching the pile is a cumulative-belief job.
+
+# Three controls keep it honest: a very-stable domain must never reopen,
+# interleaved confirms must keep it settled, and the same number of mentions
+# spread over months must NOT accumulate (surprise has to be recent, not just
+# numerous — that is what the decay half-life buys).
+
+SLOW_BURN_START = 1_700_000_000.0
+
+SLOW_BURN_PROBES = [
+    {
+        "name": "weak burn, daily",
+        "domain": "professional_context",
+        "base": "User works as a data analyst",
+        "obs": "User mentioned a nursing shift in passing",
+        "mm": 0.70,
+        "src": "weak_inference",
+        "turns": 16,
+        "gap_days": 1.0,
+        "confirm_between": False,
+        "expect": {"homeostatic": "never", "allostatic": "never",
+                   "allostatic_noscale": "never"},
+        "note": "first-test: a predicted weak stream must not reopen via s(m)",
+    },
+    {
+        "name": "weak burn, very stable",
+        "domain": "core_preference",
+        "base": "User prefers concise, direct answers",
+        "obs": "User lingered on a long explanation",
+        "mm": 0.70,
+        "src": "weak_inference",
+        "turns": 16,
+        "gap_days": 1.0,
+        "confirm_between": False,
+        "expect": {"homeostatic": "never", "allostatic": "never",
+                   "allostatic_noscale": "never"},
+        "note": "control: deep preference must not yield to weak evidence",
+    },
+    {
+        "name": "weak burn + confirms",
+        "domain": "professional_context",
+        "base": "User works as a data analyst",
+        "obs": "User mentioned a nursing shift in passing",
+        "confirm_obs": "User referred to their analyst work again",
+        "mm": 0.70,
+        "src": "weak_inference",
+        "turns": 16,
+        "gap_days": 1.0,
+        "confirm_between": True,
+        "expect": {"homeostatic": "never", "allostatic": "never",
+                   "allostatic_noscale": "never"},
+        "note": "control: confirms in between must keep the bar settled",
+    },
+    {
+        "name": "weak burn, monthly",
+        "domain": "professional_context",
+        "base": "User works as a data analyst",
+        "obs": "User mentioned a nursing shift in passing",
+        "mm": 0.70,
+        "src": "weak_inference",
+        "turns": 16,
+        "gap_days": 30.0,
+        "confirm_between": False,
+        "expect": {"homeostatic": "never", "allostatic": "never",
+                   "allostatic_noscale": "never"},
+        "note": "control: same evidence spread thin must decay, not accumulate",
+    },
+]
+
+SLOW_BURN_CONFIGS = {
+    # label -> (escalation_mode, v_exp, mode_scale)
+    "homeostatic": ("homeostatic", None, None),
+    "allostatic": ("allostatic", None, None),
+    "allostatic_noscale": ("allostatic", None, False),
+}
+
+
+def _run_slow_burn(probe, escalation_mode, v_exp=None, mode_scale=None):
+    """Return the 1-based turn that first escalated, or None if never."""
+    start = SLOW_BURN_START
+    gap = probe["gap_days"] * DAY
+    with MemoryLayer(
+        ":memory:",
+        escalation_mode=escalation_mode,
+        escalation_v_exp=v_exp,
+        escalation_mode_scale=mode_scale,
+    ) as mem:
+        mem.write(probe["base"], domain=probe["domain"], at_time=start)
+        for i in range(probe["turns"]):
+            at = start + (i + 1) * gap
+            if probe["confirm_between"] and i % 2 == 1:
+                mem.observe(
+                    probe["confirm_obs"],
+                    domain=probe["domain"],
+                    mismatch_magnitude=0.05,
+                    source="explicit_statement",
+                    at_time=at,
+                )
+                continue
+            res = mem.observe(
+                f"{probe['obs']} ({i})",
+                domain=probe["domain"],
+                mismatch_magnitude=probe["mm"],
+                source=probe["src"],
+                at_time=at,
+            )
+            if res.action == "audited":
+                return i + 1
+    return None
+
+
+def run_slow_burn():
+    rows = []
+    for probe in SLOW_BURN_PROBES:
+        got, ok = {}, {}
+        for label, (mode, v_exp, mode_scale) in SLOW_BURN_CONFIGS.items():
+            turn = _run_slow_burn(probe, mode, v_exp=v_exp, mode_scale=mode_scale)
+            got[label] = turn
+            want = probe["expect"][label]
+            ok[label] = (turn is None) if want == "never" else (turn is not None)
+        rows.append((probe, got, ok))
+    return rows
 
 
 # ── Battery B: freshness-aware retrieval ──────────────────────────────────────
@@ -287,8 +520,20 @@ def main():
         esc[p] = (c, n, rows)
         print(f"  {p:5s}: {c}/{n} probes correct  ({c / n:.0%})")
 
-    print("\n  per-probe detail (real profile):")
+    print("\n  per-probe detail (real profile, homeostatic trigger):")
     for (domain, expected, got, ok, action, note) in esc["real"][2]:
+        flag = "ok " if ok else "XX "
+        print(f"    [{flag}] {domain:20s} want={expected} got={got} "
+              f"({action:14s}) {note}")
+
+    print("\n  allostatic trigger on Battery A (same expected labels):")
+    esc_allo = {}
+    for p in profiles:
+        c, n, rows = run_escalation(p, escalation_mode="allostatic")
+        esc_allo[p] = (c, n, rows)
+        print(f"  {p:5s}: {c}/{n} probes correct  ({c / n:.0%})")
+    print("  per-probe detail (real profile, allostatic):")
+    for (domain, expected, got, ok, action, note) in esc_allo["real"][2]:
         flag = "ok " if ok else "XX "
         print(f"    [{flag}] {domain:20s} want={expected} got={got} "
               f"({action:14s}) {note}")
@@ -319,6 +564,38 @@ def main():
     print("  stale (volatile+old) memories. Higher = retrieval correctly favours")
     print("  memories that are still valid.")
 
+    # Battery C
+    print("\nBATTERY C — RECENCY-SHIFT (allostatic diagnostic)")
+    print("-" * 76)
+    recency = run_recency_shift()
+    for probe, got_c, act_c, ok_c, got_a, act_a, ok_a in recency:
+        flag_c = "ok " if ok_c else "XX "
+        flag_a = "ok " if ok_a else "XX "
+        print(f"  [{flag_c}] homeostatic want={probe['want_homeostatic']} "
+              f"got={got_c} ({act_c:14s}) {probe['name']}")
+        print(f"  [{flag_a}] allostatic  want={probe['want_allostatic']} "
+              f"got={got_a} ({act_a:14s}) {probe['note']}")
+
+    # Battery D
+    print("\nBATTERY D — WEAK SLOW BURN (isolates s(m); no θ-cap, no N-strike)")
+    print("-" * 76)
+    print(f"  {'probe':<24}{'homeostatic':>12}{'allostatic':>12}{'allo no-s(m)':>14}"
+          f"{'ok':>5}")
+    burn = run_slow_burn()
+    for probe, got, ok in burn:
+        def _fmt(label):
+            turn = got[label]
+            return "never" if turn is None else f"turn {turn}"
+        all_ok = all(ok.values())
+        print(f"  {probe['name']:<24}{_fmt('homeostatic'):>12}"
+              f"{_fmt('allostatic'):>12}{_fmt('allostatic_noscale'):>14}"
+              f"{('ok' if all_ok else 'XX'):>5}")
+        print(f"    {probe['note']}")
+    print("\n  Every observation is weak_inference (R=0.4), below both the θ-cap")
+    print("  and the cumulative N-strike override — so only s(m) can reopen the")
+    print("  bar. 'allo no-s(m)' is the same law with the surprise term disabled:")
+    print("  if it matches plain allostatic everywhere, s(m) does nothing.")
+
     # ── verdict ────────────────────────────────────────────────────────────────
     print("\n" + "=" * 76)
     print("VERDICT")
@@ -334,7 +611,27 @@ def main():
 
     a_ok = a_real > a_flat and a_real >= a_swap and a_real > 0.5
     b_ok = s_real > s_flat and s_real > s_swap
+    aa_real = esc_allo["real"][0] / esc_allo["real"][1]
+    aa_flat = esc_allo["flat"][0] / esc_allo["flat"][1]
+    aa_swap = esc_allo["swap"][0] / esc_allo["swap"][1]
+    aa_ok = aa_real > aa_flat and aa_real >= aa_swap and aa_real > 0.5
+    recency_ok = all(ok_c and ok_a for _, _, _, ok_c, _, _, ok_a in recency)
+    recency_diag = next(
+        (row for row in recency if row[0]["name"] == "noisy-then-shift professional"),
+        None,
+    )
+    diag_win = (
+        recency_diag is not None
+        and recency_diag[1] == "R"
+        and recency_diag[4] == "U"
+    )
 
+    print()
+    print(f"  A allostatic   accuracy   real={aa_real:.0%}  "
+          f"flat={aa_flat:.0%}  swap={aa_swap:.0%}")
+    print(f"  C recency-shift probes matching expected: "
+          f"{sum(ok_c and ok_a for _, _, _, ok_c, _, _, ok_a in recency)}"
+          f"/{len(recency)}")
     print()
     if a_ok and b_ok:
         print("  PASS. On BOTH capabilities the true volatility profile beats the")
@@ -350,6 +647,32 @@ def main():
         print("  Where a battery fails, the corresponding mechanism is not clearly")
         print("  driven by the volatility signal in this setup (worth investigating,")
         print("  e.g. the observe() EMA update or source-reliability dominating).")
+    print(f"  Allostatic Battery A causal: {aa_ok}")
+    print(f"  Recency-shift expected labels: {recency_ok}")
+    print(f"  Diagnostic (allostatic updates professional, homeostatic retains): {diag_win}")
+
+    burn_ok = all(all(ok.values()) for _probe, _got, ok in burn)
+    sm_earns_keep = any(
+        got["allostatic"] is not None and got["allostatic_noscale"] is None
+        for _probe, got, _ok in burn
+    )
+    sm_controls_held = all(
+        got["allostatic"] is None
+        for probe, got, _ok in burn
+        if probe["expect"]["allostatic"] == "never"
+    )
+    print(f"  Battery D expected labels: {burn_ok}")
+    print(f"  s(m) does something no exponent change does: {sm_earns_keep}")
+    print(f"  s(m) controls held (stable / confirmed / spread-thin): {sm_controls_held}")
+    if sm_earns_keep and sm_controls_held:
+        print("  => s(m) EARNS ITS KEEP: it reopens on accumulated weak evidence,")
+        print("     which no V_d exponent can do, and stays shut on all controls.")
+    elif not sm_earns_keep:
+        print("  => s(m) on r_t habituates to a constant weak stream. That is")
+        print("     the first-test finding: online surprise is unexpected residual,")
+        print("     not an EMA of M. Battery D's pile belongs to cumulative belief.")
+    else:
+        print("  => s(m) reopens, but a control also broke — it is too plastic.")
 
 
 if __name__ == "__main__":

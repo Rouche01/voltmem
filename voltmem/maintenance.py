@@ -8,6 +8,8 @@ performing operations too expensive or speculative for the write path:
 - reclassify_ambiguous: review low-confidence classifications with full history
 - pattern_audit: scan logged_mismatch clusters for emergent change signals
 - consolidate: merge mismatch evidence into a new tip (ledgered supersede)
+- reconcile_twins: pair-verify near-duplicate active rows and retire the older
+  (the write path may insert a twin rather than overwrite the wrong memory)
 
 Mutating tasks record a ``run_id`` ledger so ``MemoryLayer.rollback_maintenance``
 can undo supersedes and restore purged snapshots.
@@ -40,6 +42,8 @@ from typing import Any, Callable, Optional
 from .memory import MemoryLayer, memory_item_to_payload
 from .domains import MemoryItem
 from .summarize import HeuristicSummarizer, MemorySummarizer
+from .scoring import belief_has_shifted
+from .verify import as_verifier
 
 
 # ── task registry ─────────────────────────────────────────────────────────────
@@ -101,6 +105,19 @@ class MaintenanceContext:
             "supersede",
             old_id=old_id,
             new_id=new_id,
+            payload=extra,
+        )
+
+    def record_retire(self, old_id: str, keeper_id: str, **extra: Any) -> None:
+        """Retire an older twin. Rollback restores it without touching the keeper."""
+        if not self.run_id or self.dry_run:
+            return
+        self.store.record_maintenance_action(
+            self.run_id,
+            self.task or "unknown",
+            "retire",
+            old_id=old_id,
+            new_id=keeper_id,
             payload=extra,
         )
 
@@ -290,15 +307,22 @@ def _days_since_audit(item: MemoryItem, now: float) -> float:
 
 def _is_emergent_candidate(
     item: MemoryItem,
+    evidence: list[dict],
     *,
     now: float,
-    min_mismatch_count: int,
     min_days_since_audit: float,
-) -> bool:
-    """Shared gate for pattern_audit / consolidate candidate selection."""
-    if item.mismatch_count < min_mismatch_count:
-        return False
-    return _days_since_audit(item, now) >= min_days_since_audit
+    min_evidence: int = 3,
+) -> tuple[bool, float, float]:
+    """Shared gate for pattern_audit / consolidate.
+
+    Belief movement over a time window, not ``mismatch_count``. Returns
+    (moved, mass, bar). Audit cooldown still applies so a fresh supersede
+    is not immediately reconsolidated.
+    """
+    if _days_since_audit(item, now) < min_days_since_audit:
+        return False, 0.0, 0.0
+    return belief_has_shifted(
+        item, evidence, now=now, min_evidence=min_evidence)
 
 
 def expire_cleanup(
@@ -368,12 +392,13 @@ def pattern_audit(
     *,
     min_cluster_size: int = 3,
     lookback_days: float = 14.0,
+    evidence_limit: int = 50,
 ) -> list[dict]:
-    """Scan for items with repeated logged_mismatch — possible emergent change.
+    """Scan for items whose logged mismatches moved belief in a recent window.
 
-    Looks at active items with mismatch_count >= min_cluster_size that
-    haven't been audited recently. These are candidates for manual review or
-    proactive escalation.
+    ``min_cluster_size`` is a minimum number of post-confirm evidence rows,
+    not a lifetime ``mismatch_count``. Time-decayed mass must also clear a
+    V_d-scaled bar so a monthly drip does not look like a two-week pile.
 
     Returns flag dicts; does NOT mutate.
     """
@@ -381,18 +406,24 @@ def pattern_audit(
     items = ctx.all_active()
     flags: list[dict] = []
     for item in items:
-        if not _is_emergent_candidate(
+        evidence = ctx.store.list_mismatch_evidence(item.id, limit=evidence_limit)
+        moved, mass, bar = _is_emergent_candidate(
             item,
+            evidence,
             now=now,
-            min_mismatch_count=min_cluster_size,
             min_days_since_audit=lookback_days,
-        ):
+            min_evidence=min_cluster_size,
+        )
+        if not moved:
             continue
         flags.append({
             "item_id": item.id,
             "domain": item.domain,
             "content": item.content,
             "mismatch_count": item.mismatch_count,
+            "belief_mass": round(mass, 4),
+            "belief_bar": round(bar, 4),
+            "evidence_count": len(evidence),
             "last_confirmed_days_ago": round((now - item.last_confirmed_at) / 86400, 1),
             "suggestion": "review for emergent change",
         })
@@ -411,12 +442,13 @@ def consolidate(
     summarizer: MemorySummarizer | None = None,
     evidence_limit: int = 50,
 ) -> list[dict]:
-    """Merge mismatch evidence into a new tip for emergent-change candidates.
+    """Merge mismatch evidence into a new tip when belief in the old fact moved.
 
-    Selection matches ``pattern_audit``-style gates. Wet mutate only when
-    ``mismatch_evidence`` rows exist; content comes from ``summarizer``
-    (default ``HeuristicSummarizer``). Mutations are ledgered (``supersede``)
-    for ``rollback_maintenance``. Co-facets of touched events are flag-only.
+    ``min_mismatch_count`` is a minimum number of post-confirm evidence rows
+    (kept as the parameter name for callers). Selection uses time-decayed
+    evidence mass against a V_d-scaled bar, not the lifetime mismatch
+    counter. Wet mutate only when evidence rows exist; content comes from
+    ``summarizer``. Mutations are ledgered for ``rollback_maintenance``.
 
     When dry-run, returns what *would* be done without mutating.
     """
@@ -428,18 +460,20 @@ def consolidate(
     touched_events: set[str | None] = set()
 
     for item in items:
-        if not _is_emergent_candidate(
-            item,
-            now=now,
-            min_mismatch_count=min_mismatch_count,
-            min_days_since_audit=min_days_since_audit,
-        ):
-            continue
-
-        days_since_audit = _days_since_audit(item, now)
         evidence_rows = ctx.store.list_mismatch_evidence(
             item.id, limit=evidence_limit
         )
+        moved, mass, bar = _is_emergent_candidate(
+            item,
+            evidence_rows,
+            now=now,
+            min_days_since_audit=min_days_since_audit,
+            min_evidence=min_mismatch_count,
+        )
+        if not moved:
+            continue
+
+        days_since_audit = _days_since_audit(item, now)
         evidence_texts = [str(r["content"]) for r in evidence_rows]
 
         base = {
@@ -447,6 +481,8 @@ def consolidate(
             "domain": item.domain,
             "old_content": item.content,
             "mismatch_count": item.mismatch_count,
+            "belief_mass": round(mass, 4),
+            "belief_bar": round(bar, 4),
             "days_since_audit": round(days_since_audit, 1),
             "dry_run": is_dry,
             "event_id": item.event_id,
@@ -519,3 +555,94 @@ def consolidate(
             f" ({n_skipped} skipped, {n_cofacets} co-facets flagged)"
         )
     return actions
+
+
+def _item_stamp(item: MemoryItem) -> tuple[float, float]:
+    return (item.last_confirmed_at or 0.0, item.created_at or 0.0)
+
+
+def reconcile_twins(
+    ctx: MaintenanceContext,
+    *,
+    verifier=None,
+    similarity_fn=None,
+    recall_bar: float = 0.20,
+    top_k: int = 8,
+    dry_run: bool | None = None,
+) -> list[dict]:
+    """Retire older active rows that a pair-verifier says are the same fact.
+
+    The write path may insert a duplicate rather than overwrite the wrong
+    memory. This is the sleeptime half of that split: embeddings (or keyword
+    overlap) recall neighbours, then the same verifier ``remember()`` would
+    use on ``verify_on_write`` decides. A yes retires the *older* row and
+    keeps the newer tip. A no leaves both. No verifier means no merges —
+    never cosine-merge.
+
+    ``verifier=None`` uses ``layer._link_verifier``. Keyword-only layers have
+    none; the sidecar registers a local LLM fallback. Pass an explicit
+    verifier in tests.
+    """
+    is_dry = ctx.dry_run if dry_run is None else dry_run
+    judge = verifier if verifier is not None else ctx.layer._link_verifier
+    if judge is None:
+        return [{"skipped": "no_verifier"}]
+    judge = as_verifier(judge)
+    sim_fn = similarity_fn or ctx.layer._similarity_fn
+
+    items = sorted(ctx.all_active(), key=_item_stamp, reverse=True)
+    retired: set[str] = set()
+    actions: list[dict] = []
+    asked = 0
+
+    for newer in items:
+        if newer.id in retired:
+            continue
+        scored: list[tuple[float, MemoryItem]] = []
+        for older in items:
+            if older.id == newer.id or older.id in retired:
+                continue
+            if _item_stamp(older) > _item_stamp(newer):
+                continue
+            sim = float(sim_fn(newer.content, older.content))
+            if sim >= recall_bar:
+                scored.append((sim, older))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        for sim, older in scored[:top_k]:
+            if older.id in retired:
+                continue
+            asked += 1
+            if not judge.verify(newer.content, older.content, older.domain):
+                continue
+            action = {
+                "old_id": older.id,
+                "keeper_id": newer.id,
+                "domain": older.domain,
+                "old_content": older.content,
+                "keeper_content": newer.content,
+                "sim": round(sim, 4),
+                "dry_run": is_dry,
+            }
+            if not is_dry:
+                older.superseded_by = newer.id
+                older.last_audited_at = time.time()
+                ctx.store.update(older)
+                ctx.layer._index_delete(older.id)
+                ctx.record_retire(older.id, newer.id, sim=sim)
+            retired.add(older.id)
+            actions.append(action)
+
+    if asked or actions:
+        mode = "would" if is_dry else "did"
+        print(
+            f"[maintenance] reconcile_twins: {mode} retire {len(actions)} twins"
+            f" ({asked} verifier asks)"
+        )
+    return actions
+
+
+def reconcile_twins_default(ctx: MaintenanceContext) -> list[dict]:
+    """Sidecar/scheduler entry: layer verifier, else local 14B."""
+    from .verify import LLMLinkVerifier
+    judge = ctx.layer._link_verifier or LLMLinkVerifier()
+    return reconcile_twins(ctx, verifier=judge)

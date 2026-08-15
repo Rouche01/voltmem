@@ -146,6 +146,9 @@ Relevant eval probes: `experiments/voltmem_eval.py` → `ESCALATION_PROBES`
 - [x] **Expand eval** — below-band one-shot retain + cumulative update for `biographical` /
   `core_preference`; medium-band `skill` / `relationship` / `long_term_goal`; CI via
   `tests/test_voltmem.py` + `experiments/voltmem_eval.py`
+- [x] **Default `escalation_mode` is `"composite"`** — measured in
+  `experiments/mode_default_eval.py` (C win, E insurance holds, F keyword path
+  unchanged). `"homeostatic"` remains available.
 
 ---
 

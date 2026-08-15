@@ -209,6 +209,7 @@ def test_maintenance_dry_run_gates_expire_cleanup():
         by_name = {t["name"]: t for t in tasks.json()}
         assert by_name["expire_cleanup"]["mutates"] is True
         assert by_name["consolidate"]["default_run_all"] is True
+        assert by_name["reconcile_twins"]["mutates"] is True
         assert by_name["pattern_audit"]["mutates"] is False
 
 

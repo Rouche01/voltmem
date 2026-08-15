@@ -121,12 +121,68 @@ def test_scheduler_can_disable_consolidate():
             pass
 
 
+def test_scheduler_registers_reconcile_twins_by_default():
+    domains, classifier = build_profile("stylens")
+    restore = domains.install()
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        pool = MemoryPool(path, embeddings=False, classifier=classifier)
+        pool.for_user("sched-user").add("hello")
+        sched = SidecarMaintenanceScheduler(
+            pool,
+            check_interval=3600,
+            expire_interval=99999,
+            pattern_interval=99999,
+            reclassify_interval=99999,
+            consolidate_interval=99999,
+            reconcile_interval=0.01,
+            reconcile_enabled=True,
+        )
+        mw = sched._window_for("sched-user")
+        assert "reconcile_twins" in mw._tasks
+        out = sched.tick()
+        assert "reconcile_twins" in out["sched-user"].get("results", {})
+        pool.close()
+    finally:
+        restore()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def test_scheduler_can_disable_reconcile_twins():
+    domains, classifier = build_profile("stylens")
+    restore = domains.install()
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        pool = MemoryPool(path, embeddings=False, classifier=classifier)
+        pool.for_user("sched-user").add("hello")
+        sched = SidecarMaintenanceScheduler(
+            pool,
+            reconcile_enabled=False,
+        )
+        mw = sched._window_for("sched-user")
+        assert "reconcile_twins" not in mw._tasks
+        pool.close()
+    finally:
+        restore()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 if __name__ == "__main__":
     tests = [
         test_scheduler_tick_runs_expire_cleanup_off_request_path,
         test_list_namespaces_excludes_sidecar,
         test_scheduler_registers_consolidate_by_default,
         test_scheduler_can_disable_consolidate,
+        test_scheduler_registers_reconcile_twins_by_default,
+        test_scheduler_can_disable_reconcile_twins,
     ]
     failed = 0
     for fn in tests:

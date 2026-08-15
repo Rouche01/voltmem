@@ -59,7 +59,11 @@ def create_app() -> FastAPI:
 
         db_path = os.environ.get("VOLTMEM_DB_PATH", "voltmem_sidecar.db")
         embeddings = _env_bool("VOLTMEM_EMBEDDINGS", True)
-        pool = MemoryPool(db_path, embeddings=embeddings, classifier=classifier)
+        verify_on_write = _env_bool("VOLTMEM_VERIFY_ON_WRITE", False)
+        pool = MemoryPool(
+            db_path, embeddings=embeddings, classifier=classifier,
+            verify_on_write=verify_on_write,
+        )
         app.state.pool = pool
         app.state.domain_restore = restore
         from .maintenance_scheduler import SidecarMaintenanceScheduler
@@ -228,11 +232,13 @@ def create_app() -> FastAPI:
             reclassify_ambiguous,
             pattern_audit,
             consolidate,
+            reconcile_twins_default,
         )
         mw.register("expire_cleanup", expire_cleanup, interval=0)
         mw.register("reclassify_ambiguous", reclassify_ambiguous, interval=0)
         mw.register("pattern_audit", pattern_audit, interval=0)
         mw.register("consolidate", consolidate, interval=0)
+        mw.register("reconcile_twins", reconcile_twins_default, interval=0)
 
         if body.task:
             try:
@@ -297,6 +303,16 @@ def create_app() -> FastAPI:
                 "name": "consolidate",
                 "description": (
                     "Merge mismatch evidence into updated tips "
+                    "(mutates unless dry_run; ledgered; scheduled daily)"
+                ),
+                "interval": 86400,
+                "mutates": True,
+                "default_run_all": True,
+            },
+            {
+                "name": "reconcile_twins",
+                "description": (
+                    "Pair-verify near-duplicate memories and retire the older "
                     "(mutates unless dry_run; ledgered; scheduled daily)"
                 ),
                 "interval": 86400,

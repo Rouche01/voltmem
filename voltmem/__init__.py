@@ -53,6 +53,20 @@ from .vector_index import (
 )
 from .embeddings import EmbeddingSimilarity
 from .extract import HeuristicExtractor, LLMExtractor, HeuristicFactExtractor, LLMFactExtractor
+from .structure import (
+    StructuredFact,
+    join_structured,
+    HeuristicStructuredExtractor,
+    LLMStructuredExtractor,
+    StructuredJoinVerifier,
+)
+from .verify import (
+    LinkVerifier,
+    LLMLinkVerifier,
+    CrossEncoderVerifier,
+    VERIFY_PROMPT,
+    VERIFY_SYSTEM,
+)
 from .summarize import MemorySummarizer, HeuristicSummarizer, LLMSummarizer
 from .discovery import DomainStats, VolatilityTracker, blend_volatility
 from .maintenance import (
@@ -62,6 +76,7 @@ from .maintenance import (
     reclassify_ambiguous,
     pattern_audit,
     consolidate,
+    reconcile_twins,
 )
 from .scoring import (
     escalation_score,
@@ -69,6 +84,19 @@ from .scoring import (
     staleness,
     protection_weight,
     update_volatility_ema,
+    update_surprise_ema,
+    update_mismatch_expectation,
+    residual_surprise,
+    resolve_escalation_law,
+    RESIDUAL_GATE,
+    belief_has_shifted,
+    belief_shift_mass,
+    belief_shift_bar,
+    BELIEF_SHIFT_K,
+    expected_mismatch,
+    mismatch_sigma,
+    recent_surprise,
+    surprise_mode_scale,
     similarity_spread,
     freshness_mix,
     VOL_DRIFT_MAX,
@@ -80,6 +108,12 @@ from .scoring import (
     EXPLICIT_MAX_VD,
     EXPLICIT_E_RATIO,
     CUMULATIVE_MISMATCH_ESCALATE,
+    S_MIN,
+    ESCALATION_MODES,
+    SURPRISE_HALFLIFE_DAYS,
+    V_EXP_HOMEOSTATIC,
+    V_EXP_CURRENT,
+    V_EXP_ALLOSTATIC,
 )
 
 __all__ = [
@@ -108,6 +142,16 @@ __all__ = [
     "LLMExtractor",
     "HeuristicFactExtractor",
     "LLMFactExtractor",
+    "StructuredFact",
+    "join_structured",
+    "HeuristicStructuredExtractor",
+    "LLMStructuredExtractor",
+    "StructuredJoinVerifier",
+    "LinkVerifier",
+    "LLMLinkVerifier",
+    "CrossEncoderVerifier",
+    "VERIFY_PROMPT",
+    "VERIFY_SYSTEM",
     "MemorySummarizer",
     "HeuristicSummarizer",
     "LLMSummarizer",
@@ -119,6 +163,19 @@ __all__ = [
     "staleness",
     "protection_weight",
     "update_volatility_ema",
+    "update_surprise_ema",
+    "update_mismatch_expectation",
+    "residual_surprise",
+    "resolve_escalation_law",
+    "RESIDUAL_GATE",
+    "belief_has_shifted",
+    "belief_shift_mass",
+    "belief_shift_bar",
+    "BELIEF_SHIFT_K",
+    "expected_mismatch",
+    "mismatch_sigma",
+    "recent_surprise",
+    "surprise_mode_scale",
     "similarity_spread",
     "freshness_mix",
     "VOL_DRIFT_MAX",
@@ -130,12 +187,19 @@ __all__ = [
     "EXPLICIT_MAX_VD",
     "EXPLICIT_E_RATIO",
     "CUMULATIVE_MISMATCH_ESCALATE",
+    "S_MIN",
+    "ESCALATION_MODES",
+    "SURPRISE_HALFLIFE_DAYS",
+    "V_EXP_HOMEOSTATIC",
+    "V_EXP_CURRENT",
+    "V_EXP_ALLOSTATIC",
     "MaintenanceWindow",
     "MaintenanceContext",
     "expire_cleanup",
     "reclassify_ambiguous",
     "pattern_audit",
     "consolidate",
+    "reconcile_twins",
 ]
 
 __version__ = "0.3.1"
