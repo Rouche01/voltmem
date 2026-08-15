@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voltmem"
-version = "0.3.1"
+version = "0.4.0"
 description = "Current-truth memory for LLM agents — protect stable facts, update volatile ones."
 readme = "README.md"
 license = "MIT"

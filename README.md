@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 
@@ -17,6 +17,21 @@ volatile memories rank lower at search time.
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
 **Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md)
+
+### What’s new in 0.4.0
+
+- **Composite default** — `escalation_mode="composite"` (homeostatic insurance on
+  weak evidence; allostatic on explicit high-`M` or unexpected residual).
+  `"homeostatic"` / `"current"` remain available
+- **Heuristic write matching** — persist `(subject, attribute, value)`; match by
+  subject, not cosine. Grey frames insert as twins. False merge = 0 preferred
+  over extra link accuracy
+- **Sleeptime 14B** — with embeddings, a local verifier is attached for
+  `reconcile_twins` (sidecar daemon; `VOLTMEM_RECONCILE_TWINS` /
+  `VOLTMEM_RECONCILE_INTERVAL`). Live `add()` / `remember()` stay millisecond.
+  Hatch: `verify_on_write=True` or sidecar `VOLTMEM_VERIFY_ON_WRITE=1`
+- **Shipped claim is embeddings + sidecar sleeptime.** Keyword-only still uses
+  the threshold ladder (false merges). Twins coexist until `reconcile_twins` runs
 
 ### What’s new in 0.3.1
 
@@ -108,7 +123,7 @@ system = f"What you know about this user:\n{context}"
 
 | Method | Description |
 |---|---|
-| `create_memory(db, user_id)` | Factory with auto-detected embeddings, vector index, and two-stage `remember()` linking |
+| `create_memory(db, user_id)` | Factory with auto-detected embeddings, vector index, and heuristic `remember()` matching |
 | `Memory.add(text \| messages)` | Store a fact; slot-aware linking updates related memories |
 | `Memory.search(query, limit=5)` | ANN candidates + volatility re-rank (relevance + freshness; adaptive mix on similarity plateaus) |
 | `Memory.domain_stats()` | Per-domain prior calibration telemetry (audit / mismatch / confirm rates) |
