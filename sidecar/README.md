@@ -57,6 +57,9 @@ python -m sidecar
 | `VOLTMEM_RECLASSIFY_INTERVAL` | `86400` | Min seconds between `reclassify_ambiguous` |
 | `VOLTMEM_CONSOLIDATE` | `1` | Include consolidate in the daemon (`0` to disable) |
 | `VOLTMEM_CONSOLIDATE_INTERVAL` | `86400` | Min seconds between `consolidate` |
+| `VOLTMEM_RECONCILE_TWINS` | `1` | Include twin reconciliation in the daemon (`0` to disable) |
+| `VOLTMEM_RECONCILE_INTERVAL` | `86400` | Min seconds between `reconcile_twins` |
+| `VOLTMEM_VERIFY_ON_WRITE` | `0` | `1` asks the 14B verifier on grey `add()` / `remember()`; default waits for sleeptime |
 | `HOST` | `0.0.0.0` | Bind address (`python -m sidecar`) |
 | `PORT` | `8080` | Listen port |
 
@@ -85,14 +88,19 @@ python -m sidecar
 
 **Background daemon (default on):** a sidecar thread periodically runs
 `run_due` per tenant for `expire_cleanup`, `pattern_audit`,
-`reclassify_ambiguous`, and `consolidate`. Disable the whole daemon with
-`VOLTMEM_MAINTENANCE=0`, or only consolidate with `VOLTMEM_CONSOLIDATE=0`.
+`reclassify_ambiguous`, `consolidate`, and `reconcile_twins`. Disable the
+whole daemon with `VOLTMEM_MAINTENANCE=0`. Disable only consolidate with
+`VOLTMEM_CONSOLIDATE=0`, or only twin reconciliation with
+`VOLTMEM_RECONCILE_TWINS=0`.
+
+Grey writes insert as twins until `reconcile_twins` runs (local 14B). Set
+`VOLTMEM_VERIFY_ON_WRITE=1` to ask on the live `add()` path instead.
 
 **Manual trigger:** `POST .../maintenance/trigger` body: `{ "task"?: string, "dry_run"?: bool }`.
 
 - Default **`dry_run: false`** — mutating tasks apply (maintenance maintains).
 - Pass **`dry_run: true`** to preview without changing memory.
-- Omit ``task`` → default set including `consolidate` (merges mismatch evidence; skips items with none).
+- Omit ``task`` → default set including `consolidate` and `reconcile_twins`.
 - Response includes **`run_id`**. Undo with:
 
 `POST .../maintenance/rollback` body: `{ "run_id": "..." }`

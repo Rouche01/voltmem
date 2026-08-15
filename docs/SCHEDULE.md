@@ -1,7 +1,7 @@
 # VoltMem Development Roadmap — Post-Sleeptime Compute Reframe
 
-**Version:** 0.3.1  
-**Date:** 2026-08-08  
+**Version:** 0.4.0  
+**Date:** 2026-08-15  
 **Based on:** [Sleeptime Compute blog post](../blog-sleeptime-compute.md) + [OPEN_PROBLEMS.md](OPEN_PROBLEMS.md)
 
 ---
@@ -10,7 +10,7 @@
 
 The sleeptime compute insight reframes VoltMem's open problems: the real gap is not just better escalation math, but a **maintenance layer** that operates during idle cycles to integrate, relabel, and restructure memories after write-time constraints have passed.
 
-**Shipped in 0.3.0:** enabling API (`event_id` + multi-facet + TTL), classification corpus, and maintenance substrate (tasks, ledger/rollback, sidecar daemon, WAL). **Also shipped:** real `consolidate` (mismatch evidence + summarizer + scheduled). **Next:** keyword/collision fixes, dogfood (stylens), then smarter reclassify.
+**Shipped in 0.3.0:** enabling API (`event_id` + multi-facet + TTL), classification corpus, and maintenance substrate (tasks, ledger/rollback, sidecar daemon, WAL). **0.3.1:** real `consolidate` (mismatch evidence + summarizer + scheduled). **0.4.0:** `escalation_mode="composite"` default; millisecond heuristic write path; `reconcile_twins` on the sidecar daemon (14B at sleeptime, `verify_on_write=True` to ask live). **Next:** keyword/collision fixes, dogfood (stylens), then smarter reclassify.
 
 ---
 
@@ -32,6 +32,7 @@ Keep write-path fixes and idle-path maintenance distinct — they solve differen
 | Concern | Prefer | Sleeptime role |
 |---|---|---|
 | **Emergent change** (weak mismatches that never cross live θ) | — | **Primary job** — `pattern_audit` / real `consolidate` |
+| **Grey write twins** (heuristic miss, no live 14B) | Duplicate on write | **`reconcile_twins`** — pair-verify and retire the older row |
 | **Keyword collisions** (e.g. `feel` → mood vs opinion) | Fix keywords / write-path classifier first | **Secondary** — `reclassify_ambiguous` with fuller context; score with the classification corpus |
 | **Undated fleeting facts** | Label as `transient_fact` (high \(V_d\)) so retrieval ages them out fast | Not a reclassify problem |
 | **Dated session facts** (“until Friday”) | Optional **TTL** (`expires_at` / `ttl_seconds`) | **`expire_cleanup`** only — purge after hard expiry |
@@ -101,9 +102,9 @@ Not a polish product feature — the substrate that enables P2-sleeptime operati
 **Shipped:**
 
 1. `MaintenanceWindow` + task registry (`voltmem/maintenance.py`)
-2. Tasks: `expire_cleanup`, `reclassify_ambiguous`, `pattern_audit`, `consolidate` (real merge from mismatch evidence; scheduled)
-3. Ledger tables + `rollback_maintenance(run_id)` for supersede / purge snapshots
-4. Sidecar: `POST .../maintenance/trigger`, `.../rollback`; background `MaintenanceScheduler` (`VOLTMEM_MAINTENANCE=1`) for expire / pattern_audit / reclassify / consolidate (`VOLTMEM_CONSOLIDATE=0` to disable consolidate only)
+2. Tasks: `expire_cleanup`, `reclassify_ambiguous`, `pattern_audit`, `consolidate` (real merge from mismatch evidence; scheduled), `reconcile_twins` (14B pair-verify; scheduled)
+3. Ledger tables + `rollback_maintenance(run_id)` for supersede / purge / retire snapshots
+4. Sidecar: `POST .../maintenance/trigger`, `.../rollback`; background `MaintenanceScheduler` (`VOLTMEM_MAINTENANCE=1`) for expire / pattern_audit / reclassify / consolidate / reconcile_twins (`VOLTMEM_CONSOLIDATE=0` or `VOLTMEM_RECONCILE_TWINS=0` to disable one)
 5. File-backed SQLite WAL + busy timeout on store and vector index
 
 **Still open:** confidence-driven reclassify quality; richer scheduling UX; co-facet auto-merge.
@@ -137,7 +138,8 @@ Phase 2 — Maintenance Launch                         ✅ substrate 0.3.0
 ├── 2.4 pattern_audit (mismatch clusters → review)        ✅ scaffold
 ├── 2.5 Ledger + rollback_maintenance                     ✅
 ├── 2.6 Sidecar daemon + trigger/rollback HTTP            ✅
-└── 2.7 Real consolidate (merge supersedes)               ✅
+├── 2.7 Real consolidate (merge supersedes)               ✅
+└── 2.8 reconcile_twins (sleeptime 14B)                   ✅ 0.4.0
 
 Phase 3 — Integration & Polish
 ├── 3.1 Sidecar maintenance endpoints                     ✅

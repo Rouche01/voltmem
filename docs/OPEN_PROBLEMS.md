@@ -2,7 +2,7 @@
 
 Tracking doc from feedback and internal eval findings (Jul 2026).
 For reproduction commands see [RESEARCH.md](RESEARCH.md).
-Sleeptime / maintenance status: [SCHEDULE.md](SCHEDULE.md) (**0.3.1** — real consolidate + harden evals).
+Sleeptime / maintenance status: [SCHEDULE.md](SCHEDULE.md) (**0.4.0** — composite default, heuristic write, `reconcile_twins`).
 
 ---
 

@@ -1,5 +1,7 @@
 # From a Theory of Consciousness to an Improvement of VoltMem
 
+**As of 0.4.0 (2026-08-15).** This file is a research log; later sections record recommendations that have since shipped. Current product defaults: `escalation_mode="composite"` (`"homeostatic"` remains available); `remember()` matches heuristically on write; grey frames insert as twins until sidecar `reconcile_twins` (local 14B). Live two-stage linking is opt-in (`verify_on_write=True`).
+
 ## Part 1 — The Philosophical Arc
 
 **1. Starting hypothesis: consciousness tracks dynamism**
@@ -134,7 +136,7 @@ If variant 4 wins specifically on the forgetting-after-recency metric and not un
 
 ## Results
 
-Implemented behind `escalation_mode="allostatic"` (default remains `"homeostatic"`; `"current"` is still accepted as an alias). Two ingredients change together relative to the control law: `V_d` leaves the escalation score, and `θ_t` is scaled by `s(m)`, a decayed readout of recent surprise. Run `experiments/allostatic_ablation.py` to reproduce.
+Implemented behind `escalation_mode="allostatic"` (at the time of this experiment the default was `"homeostatic"`; as of 0.4.0 the default is `"composite"`. `"current"` is still accepted as an alias for homeostatic). Two ingredients change together relative to the control law: `V_d` leaves the escalation score, and `θ_t` is scaled by `s(m)`, a decayed readout of recent surprise. Run `experiments/allostatic_ablation.py` to reproduce.
 
 **The two ingredients do different jobs, and the first one is the load-bearing one for explicit contradictions.** Sweeping the `V_d` exponent in `E_t` (`p = 1` is the control law, `p = 0` is allostatic) crossed with `s(m)` on/off: only `p = 0` recovers the recency-shift cases, and it's a cliff rather than a gradient — the entrenched career change clears the bar by ~27% at `p = 0` and misses by ~6% at `p = 0.25`. `s(m)` changed no outcome at any `p`. The prior double-charging of volatility (numerator of `E_t` *and* denominator of `θ_t`) was the actual defect.
 
@@ -158,7 +160,7 @@ This inverts the framing above. The double `V_d` charge is not simply a defect �
 
 The ablation already ruled out the obvious compromise: `p` between 0 and 1 loses the recency-shift win entirely (cliff at `p = 0`), so partial `V_d` buys nothing. A composite gate is the remaining option — take the allostatic score only when evidence is explicit and high-`M`, or when surprise has already accumulated, and keep the `V_d` discount otherwise — since Battery E's failures are all weak-evidence-on-settled-item, which is exactly the region neither Battery C nor D depends on.
 
-**Recommendation: keep `escalation_mode="homeostatic"` as the default.** Allostatic is safe to enable where the caller supplies `domain=` explicitly rather than relying on inference: at zero label noise it scores 100% on Battery A and wins C. The distinction is principled rather than a fudge, because the two modes differ precisely in how much they trust the domain label.
+**Recommendation at the time: keep `escalation_mode="homeostatic"` as the default** (superseded in 0.4.0 by `"composite"` after Battery E showed composite matching homeostatic's false-update rate). Allostatic remains safe to enable where the caller supplies `domain=` explicitly rather than relying on inference: at zero label noise it scores 100% on Battery A and wins C. The distinction is principled rather than a fudge, because the two modes differ precisely in how much they trust the domain label.
 
 ### First test — unexpected residual as surprise
 
@@ -373,7 +375,7 @@ Three of the four fail, in two opposite directions, and neither failure is subtl
 
 ### Battery I — integrated, and the verdict is split (superseded by Battery J)
 
-Two-stage linking is the default `remember()` path whenever an embedder is present (`link_verifier="auto"`). Keyword-only layers keep the threshold ladder. A dead verifier falls through to the ladder instead of skipping a pair the thresholds would have caught; a live KEEP_BOTH still inserts (that is how false merges stay off the ladder).
+Two-stage linking was measured here as the default `remember()` path whenever an embedder is present (`link_verifier="auto"`). As of 0.4.0 that is no longer true: live `remember()` uses heuristic subject/attribute matching; the 14B verifier runs at sleeptime (`reconcile_twins`) unless `verify_on_write=True`. Keyword-only layers keep the threshold ladder. A dead verifier falls through to the ladder instead of skipping a pair the thresholds would have caught; a live KEEP_BOTH still inserts (that is how false merges stay off the ladder).
 
 **Through the real `remember()` path, the pair-level result survives exactly.** Battery G with `sentence-transformers + verify`, held-out: 21/28 links and **0/28 false merges**, against 25/28 and 12/28 for the same embeddings under the threshold ladder. The numbers match Battery H to the pair, so nothing is lost to the interaction with the ladder, `observe()`, or the escalation law.
 
@@ -446,7 +448,7 @@ Otherwise it keeps homeostatic. A fresh item has no anticipation, so the first w
 | E label noise, real rate | **94.9% / 0.93 FU** — identical to homeostatic, vs allostatic 93.8% / 1.12 |
 | E at 50% mislabel | **84.2% / 2.84 FU** — identical to homeostatic, vs allostatic 80.9% / 3.44 |
 
-**Pass on the write-path bar:** C still wins, E's extra false updates drop to homeostatic's rate, D is not silently reopened live. Default stays `"homeostatic"` until routing is fixed; composite is the opt-in that actually has a measured reason to exist for mixed-label callers.
+**Pass on the write-path bar:** C still wins, E's extra false updates drop to homeostatic's rate, D is not silently reopened live. As of 0.4.0 the default is `"composite"`; `"homeostatic"` remains available. Composite is the mode that actually has a measured reason to exist for mixed-label callers.
 
 ### Third test — sleeptime on the logged pile
 

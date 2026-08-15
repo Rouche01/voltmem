@@ -218,7 +218,7 @@ def create_app() -> FastAPI:
         """Run a maintenance task for a user.
 
         Pass ``task`` to run a specific task, or omit to run the default set
-        (``expire_cleanup``, flag tasks, and ``consolidate``).
+        (``expire_cleanup``, flag tasks, ``consolidate``, ``reconcile_twins``).
 
         ``dry_run`` (default ``false``) gates mutating tasks. Pass
         ``dry_run=true`` to preview. Returns a ``run_id`` for
