@@ -216,7 +216,8 @@ volatility-scaled lower threshold; multi-fact domains require a clear best match
 
 On three scripted scenarios vs real Mem0 (open-source, `gpt-4o-mini`), VoltMem
 wins **3/3** on current-truth retrieval (1 fact stored, correct top answer) while
-Mem0 keeps contradictory pairs (2 facts, stale top answer on 2/3). This is a
+Mem0 is stale-top on mood and location (2 facts) and adopts the preference blip
+(partial). This is a
 **wedge case study**, not a public-benchmark SOTA claim.
 
 **Limit:** linking quality still depends on the embedding backend; the volatility

@@ -3,6 +3,7 @@
 [![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21962419.svg)](https://doi.org/10.5281/zenodo.21962419)
 
 **Current-truth memory for LLM agents.**
 

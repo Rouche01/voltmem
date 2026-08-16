@@ -28,6 +28,8 @@ from reportlab.platypus import (
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "volatility_ewc_portfolio.pdf")
+DOI = "10.5281/zenodo.21962419"
+DOI_URL = f"https://doi.org/{DOI}"
 
 # Source of truth for arXiv abstract — keep paper/ARXIV_SUBMISSION.md in sync.
 ABSTRACT = (
@@ -41,12 +43,13 @@ ABSTRACT = (
     "Split-MNIST the honest result is subtler: volatility weighting is not a "
     "free-lunch Pareto win but a <b>causal control knob</b> that steers the "
     "tradeoff. The same principle powers VoltMem, an open-source Python memory "
-    "library for LLM agents: volatility-aware write and retrieval policies beat "
-    "flat and inverted controls on scripted multi-turn scenarios (balanced score "
-    "0.597, only policy strong on both stable and volatile axes), a noisy retrieval "
-    "haystack (0% stale@1 vs 20% cosine-only; separation 0.153 vs &minus;0.003), "
-    "and a 3/3 current-truth case study vs Mem0 on mood, preference, and location "
-    "updates. On LongMemEval-S (n=60, chunk-calibrated RAG ingest), retrieval "
+    "library for LLM agents. On scripted multi-turn scenarios, volatility-aware "
+    "write and retrieval beat flat and inverted controls (balanced score 0.597, "
+    "only policy strong on both stable and volatile axes). On a noisy retrieval "
+    "haystack the win is staleness resistance (0% stale@1 vs 20% cosine-only; "
+    "separation 0.153 vs &minus;0.003), not top-1 hit rate. A scripted case study "
+    "vs Mem0 is 3/3 on current-truth for mood, preference, and location updates. "
+    "On LongMemEval-S (n=60, chunk-calibrated RAG ingest), retrieval "
     "answer@5 is 70.0% for VoltMem&mdash;tying plain cosine and beating the "
     "inverted-volatility control (66.7%)&mdash;without claiming public-benchmark "
     "SOTA (uniform-volatility ablation reaches 71.7%). We report limitations, "
@@ -185,7 +188,11 @@ def build():
         P("A causal control knob for continual learning and LLM agent memory",
           SUB),
         P("Richard Emate", SUB),
-        P("richard@theemate.com &middot; Independent &middot; 2026", SUB),
+        P("richard@theemate.com &middot; Independent &middot; 16 August 2026", SUB),
+        P(f"doi.org/{DOI}", SUB),
+        P("Preprint. Results from VoltMem 0.2.x (git tag v0.2.2). "
+          "The current package (0.4.0) changes the default write law and is "
+          "not claimed here.", NOTE),
     ]
 
     # ── Abstract (synced with paper/ARXIV_SUBMISSION.md) ──────────────────
@@ -436,12 +443,13 @@ def build():
     story += [make_table([
         ["scenario", "VoltMem", "Mem0 (real)"],
         ["mood update", "1 fact, correct top", "2 facts, stale top"],
-        ["preference change", "1 fact, correct top", "2 facts, stale top"],
+        ["preference change", "1 fact, correct top", "adopts blip (partial)"],
         ["location change", "1 fact, correct top", "2 facts, stale top"],
     ], col_widths=[50 * mm, 50 * mm, 50 * mm], highlight_col=1)]
     story += [P(
-        "Scripted case study (3/3 current-truth wins) vs Mem0&nbsp;[6] "
-        "(open-source, gpt-4o-mini, text-embedding-3-small); not a "
+        "Scripted case study (VoltMem 3/3 current-truth) vs Mem0&nbsp;[6] "
+        "(open-source, gpt-4o-mini, text-embedding-3-small). Mem0 is stale-top "
+        "on mood and location, and adopts the preference blip. Not a "
         "public-benchmark SOTA claim. Embeddings: MiniLM&nbsp;[8].",
         CAP)]
 
@@ -458,7 +466,9 @@ def build():
     ], col_widths=[38 * mm, 24 * mm, 24 * mm, 24 * mm, 30 * mm], highlight_col=1)]
     story += [P(
         "PASS: real avoids stale volatile traps (0% stale@1 vs 20% cosine), finds "
-        "current in top-5 more often (100% vs 80%), separation real &gt; swap.",
+        "current in top-5 more often (100% vs 80%), separation real &gt; swap. "
+        "current@1 is not above flat (0.600 vs 0.800) &mdash; the win is "
+        "staleness resistance, not raw top-1 hit rate.",
         CAP)]
     story += [P("LongMemEval-S (n=60, chunk-calibrated ingest: user &rarr; "
                 "<i>stated_preference</i>, assistant &rarr; <i>opinion</i>):", BODY)]
@@ -504,6 +514,9 @@ def build():
         "cosine (70.0%); flat leads (71.7%); swap (66.7%) &lt; real.",
         "<b>Manual partitioning.</b> Automatic volatility detection from "
         "gradient-conflict signals remains open work.",
+        "<b>Software snapshot.</b> Library tables use VoltMem 0.2.x "
+        "(git tag v0.2.2). <i>pip install voltmem</i> currently resolves to "
+        "0.4.0, whose default write law is not evaluated here.",
         "<b>Vector index (v0.2).</b> SQLite ANN accelerates candidate retrieval; "
         "volatility re-rank is unchanged (engineering, not a separate claim).",
         "<b>No replay-baseline comparison</b> yet (GEM&nbsp;[2], A-GEM, synaptic "
@@ -532,8 +545,10 @@ def build():
 
     story += [hr()]
     story += [P(
+        f"DOI: <b>{DOI_URL}</b> &middot; "
         "Code: <b>github.com/Rouche01/voltmem</b> &middot; "
-        "Package: <b>pypi.org/project/voltmem</b> (v0.2.0)",
+        "Reproduce: <b>git checkout v0.2.2</b> &middot; "
+        "PyPI latest is 0.4.0 (different default write law)",
         CAP)]
 
     doc = SimpleDocTemplate(
@@ -542,6 +557,7 @@ def build():
         topMargin=20 * mm, bottomMargin=20 * mm,
         title="Volatility-Adjusted Memory Protection",
         author="Richard Emate",
+        subject=DOI_URL,
     )
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     print(f"wrote {OUT}")

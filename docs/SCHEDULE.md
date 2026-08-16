@@ -186,6 +186,7 @@ Ask three questions before starting any task:
 ## 8. References
 
 - Blog: `/Users/richardemate/Documents/blog-sleeptime-compute.md`
+- Blog (0.4.0): [`docs/ALLOSTATIC_SURPRISE.md`](ALLOSTATIC_SURPRISE.md) · `/Users/richardemate/Documents/blog-allostatic-surprise.md`
 - Current roadmap: `/Users/richardemate/Projects/voltmem/docs/OPEN_PROBLEMS.md`
 - Core memory layer: `/Users/richardemate/Projects/voltmem/voltmem/memory.py`
 - Scoring: `/Users/richardemate/Projects/voltmem/voltmem/scoring.py`

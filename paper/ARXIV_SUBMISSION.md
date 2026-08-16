@@ -11,6 +11,7 @@ Pre-submission package for the reconciled VoltMem research draft. Submit manuall
 | Findings log | `paper/findings.md` |
 | Reproduction guide | `docs/RESEARCH.md` |
 | Code | https://github.com/Rouche01/voltmem |
+| Zenodo DOI | https://doi.org/10.5281/zenodo.21962419 |
 | PyPI package | https://pypi.org/project/voltmem/ (v0.2.0) |
 
 ## Rebuild PDF
@@ -32,15 +33,15 @@ for the arXiv web form.
 
 **Abstract (draft):**
 
-Standard continual-learning methods such as Elastic Weight Consolidation apply a uniform protection strength to all past knowledge, forcing a stability–plasticity tradeoff. We scale protection per domain by measured volatility *before* any update, and validate claims with negative controls: shuffling or inverting the domain→volatility map must degrade performance monotonically (REAL > SHUFFLE > SWAP). On a synthetic benchmark with disjoint task inputs, both retention and adaptation improve simultaneously. On Split-MNIST the honest result is subtler: volatility weighting is not a free-lunch Pareto win but a **causal control knob** that steers the tradeoff. The same principle powers VoltMem, an open-source Python memory library for LLM agents: volatility-aware write and retrieval policies beat flat and inverted controls on scripted multi-turn scenarios (balanced score 0.597, only policy strong on both stable and volatile axes), a noisy retrieval haystack (0% stale@1 vs 20% cosine-only; separation 0.153 vs −0.003), and a 3/3 current-truth case study vs Mem0 on mood, preference, and location updates. On LongMemEval-S (n=60, chunk-calibrated RAG ingest), retrieval answer@5 is 70.0% for VoltMem—tying plain cosine and beating the inverted-volatility control (66.7%)—without claiming public-benchmark SOTA (uniform-volatility ablation reaches 71.7%). We report limitations, embedding-backend variance, failed early wins discarded by sabotage controls, and open gaps in automatic domain discovery.
+Standard continual-learning methods such as Elastic Weight Consolidation apply a uniform protection strength to all past knowledge, forcing a stability–plasticity tradeoff. We scale protection per domain by measured volatility *before* any update, and validate claims with negative controls: shuffling or inverting the domain→volatility map must degrade performance monotonically (REAL > SHUFFLE > SWAP). On a synthetic benchmark with disjoint task inputs, both retention and adaptation improve simultaneously. On Split-MNIST the honest result is subtler: volatility weighting is not a free-lunch Pareto win but a **causal control knob** that steers the tradeoff. The same principle powers VoltMem, an open-source Python memory library for LLM agents. On scripted multi-turn scenarios, volatility-aware write and retrieval beat flat and inverted controls (balanced score 0.597, only policy strong on both stable and volatile axes). On a noisy retrieval haystack the win is staleness resistance (0% stale@1 vs 20% cosine-only; separation 0.153 vs −0.003), not top-1 hit rate. A scripted case study vs Mem0 is 3/3 on current-truth for mood, preference, and location updates. On LongMemEval-S (n=60, chunk-calibrated RAG ingest), retrieval answer@5 is 70.0% for VoltMem—tying plain cosine and beating the inverted-volatility control (66.7%)—without claiming public-benchmark SOTA (uniform-volatility ablation reaches 71.7%). We report limitations, embedding-backend variance, failed early wins discarded by sabotage controls, and open gaps in automatic domain discovery. Results use VoltMem 0.2.x (git tag v0.2.2); the current package is 0.4.0 and is not claimed here.
 
 **Abstract (short, if arXiv limits apply):**
 
-We scale continual-learning protection and LLM memory freshness by per-domain volatility, validated with shuffle/invert negative controls (REAL > SHUFFLE > SWAP). On Split-MNIST this is a causal stability–plasticity knob, not a universal accuracy win. VoltMem, an open-source agent memory library, applies the same idea to writes and retrieval: 3/3 current-truth vs Mem0 on scripted scenarios, 0% stale@1 vs 20% cosine on a haystack bench, and 70% answer@5 on LongMemEval-S (n=60)—tying cosine, not beating it. Code: github.com/Rouche01/voltmem; pip install voltmem.
+We scale continual-learning protection and LLM memory freshness by per-domain volatility, validated with shuffle/invert negative controls (REAL > SHUFFLE > SWAP). On Split-MNIST this is a causal stability–plasticity knob, not a universal accuracy win. VoltMem 0.2.x applies the same idea to writes and retrieval: 3/3 current-truth vs Mem0 on scripted scenarios, 0% stale@1 vs 20% cosine on a haystack bench (not a top-1 win), and 70% answer@5 on LongMemEval-S (n=60)—tying cosine, not beating it. Reproduce at git tag v0.2.2; current PyPI is 0.4.0.
 
 **Categories:** cs.LG (primary), cs.AI
 
-**Comments:** 8 pages. Code and reproduction scripts at https://github.com/Rouche01/voltmem ; PyPI voltmem 0.2.0.
+**Comments:** 6 pages. Preprint doi:10.5281/zenodo.21962419. Results from VoltMem 0.2.x (git tag v0.2.2). Code: https://github.com/Rouche01/voltmem
 
 ## Pre-upload checklist
 
@@ -56,6 +57,7 @@ We scale continual-learning protection and LLM memory freshness by per-domain vo
 
 ## After acceptance
 
+- [x] Add Zenodo DOI badge to `README.md` and `docs/RESEARCH.md`
 - [ ] Add arXiv ID badge to `README.md` and `docs/RESEARCH.md`
 - [ ] Link PDF from portfolio / LinkedIn
 - [ ] Tag release `v0.2.0` on GitHub if not already
