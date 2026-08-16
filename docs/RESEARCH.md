@@ -57,6 +57,12 @@ plateaus (Problem 3; \(m=1\) when top-candidate spread is informative).
 
 Full derivation: [paper/findings.md §2](../paper/findings.md).
 
+The 0.4.0 homeostatic / allostatic / composite split is also a machine-checked
+spec in [`lean/`](../lean/README.md) (double charge, switch vs blend, matcher
+in front of the law). Python `scoring.py` remains the runtime; Lean does not
+verify the classifier, embeddings, or verifier. Reproduction: `cd lean && lake build`
+and `python tests/test_lean_oracle.py`.
+
 ---
 
 ## Claims summary

@@ -1,0 +1,10 @@
+name = "VoltMem"
+version = "0.1.0"
+defaultTargets = ["VoltMem", "voltmem_oracle"]
+
+[[lean_lib]]
+name = "VoltMem"
+
+[[lean_exe]]
+name = "voltmem_oracle"
+root = "Main"

@@ -17,7 +17,7 @@ volatile memories rank lower at search time.
 
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
-**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md)
+**Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md) · **Control-law spec (Lean):** [lean/README.md](lean/README.md)
 
 ### What’s new in 0.4.0
 
