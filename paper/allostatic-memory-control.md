@@ -2,9 +2,9 @@
 
 Richard Emate  
 Independent · richard@theemate.com  
-16 August 2026
+20 August 2026
 
-**Draft.** Empirical companion to Emate (2026), doi:10.5281/zenodo.21962419. VoltMem 0.4.0 control-law work. Not a theory of consciousness. Reproduction: `experiments/allostatic_ablation.py`, `experiments/label_noise_eval.py`, `experiments/end_to_end_eval.py`, `experiments/linking_eval.py`, `experiments/llm_verify_eval.py`. Source log: `docs/allostatic-consciousness-to-voltmem.md`.
+**Preprint.** doi:10.5281/zenodo.22019047. Empirical companion to Emate (2026), doi:10.5281/zenodo.21962419. VoltMem 0.4.0 control-law work. Not a theory of consciousness. Reproduction: `experiments/allostatic_ablation.py`, `experiments/label_noise_eval.py`, `experiments/end_to_end_eval.py`, `experiments/linking_eval.py`, `experiments/llm_verify_eval.py`. Source log: `docs/allostatic-consciousness-to-voltmem.md`.
 
 ---
 

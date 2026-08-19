@@ -22,6 +22,8 @@ from reportlab.platypus import (
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "allostatic-memory-control.pdf")
+DOI = "10.5281/zenodo.22019047"
+DOI_URL = f"https://doi.org/{DOI}"
 PRIOR_DOI = "10.5281/zenodo.21962419"
 PRIOR_DOI_URL = f"https://doi.org/{PRIOR_DOI}"
 
@@ -203,8 +205,9 @@ def build():
         P("Homeostatic and allostatic control laws for agent memory updates",
           SUB),
         P("Richard Emate", SUB),
-        P("richard@theemate.com &middot; Independent &middot; 16 August 2026",
+        P("richard@theemate.com &middot; Independent &middot; 20 August 2026",
           SUB),
+        P(f"doi.org/{DOI}", SUB),
         P("Preprint. Empirical companion to Emate (2026), "
           f"<link href=\"{PRIOR_DOI_URL}\">doi:{PRIOR_DOI}</link>. "
           "Results from VoltMem 0.4.0. Not a theory of consciousness.", NOTE),
@@ -594,6 +597,7 @@ def build():
 
     story += [hr()]
     story += [P(
+        f"DOI: <b>{DOI_URL}</b> &middot; "
         "Code: <b>github.com/Rouche01/voltmem</b> &middot; "
         "Package: <b>voltmem 0.4.0</b> &middot; "
         f"Companion: <b>{PRIOR_DOI_URL}</b>",
@@ -606,7 +610,7 @@ def build():
         title="Prior versus Residual: Homeostatic and Allostatic Control Laws "
               "for Agent Memory Updates",
         author="Richard Emate",
-        subject=f"Companion to {PRIOR_DOI_URL}",
+        subject=DOI_URL,
     )
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     print(f"wrote {OUT}")

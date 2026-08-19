@@ -10,6 +10,7 @@ Companion preprint to [doi:10.5281/zenodo.21962419](https://doi.org/10.5281/zeno
 | Editable source | `paper/build_allostatic_paper.py` |
 | Prose source | `paper/allostatic-memory-control.md` |
 | Code | https://github.com/Rouche01/voltmem (tag / package 0.4.0) |
+| This record | https://doi.org/10.5281/zenodo.22019047 |
 | Cites | https://doi.org/10.5281/zenodo.21962419 |
 
 ## Rebuild PDF
@@ -40,4 +41,4 @@ The overwrite law is only reached after a match. Through remember(text), decisio
 
 ## After a reserved DOI
 
-Send the new DOI so it can be printed on the title page and the PDF rebuilt, then replace the file on the same draft before publishing.
+Printed on the PDF: `10.5281/zenodo.22019047`. Replace the file on the same draft, then Publish. Do not delete the draft.

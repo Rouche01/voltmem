@@ -5,7 +5,7 @@ For the product quickstart see [README.md](../README.md).
 
 **Paper:** [PDF](../paper/volatility_ewc_portfolio.pdf) · [doi:10.5281/zenodo.21962419](https://doi.org/10.5281/zenodo.21962419) · [arXiv submission guide](../paper/ARXIV_SUBMISSION.md)
 
-**0.4.0 companion:** [Prior versus Residual (PDF)](../paper/allostatic-memory-control.pdf) · [markdown](../paper/allostatic-memory-control.md) · [submission notes](../paper/ALLOSTATIC_SUBMISSION.md) · [Consciousness Might Not Look Like Anything](../paper/consciousness-allostasis-memory.md) (combined; consciousness is not a result)
+**0.4.0 companion:** [Prior versus Residual (PDF)](../paper/allostatic-memory-control.pdf) · [doi:10.5281/zenodo.22019047](https://doi.org/10.5281/zenodo.22019047) · [markdown](../paper/allostatic-memory-control.md) · [submission notes](../paper/ALLOSTATIC_SUBMISSION.md) · [Consciousness Might Not Look Like Anything](../paper/consciousness-allostasis-memory.md) (combined; consciousness is not a result)
 
 **Package:** [PyPI voltmem](https://pypi.org/project/voltmem/) · [GitHub](https://github.com/Rouche01/voltmem)
 
