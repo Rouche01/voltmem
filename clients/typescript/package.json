@@ -4,6 +4,14 @@
   "description": "Workers-safe TypeScript client for the VoltMem HTTP sidecar",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rouche01/voltmem.git",
+    "directory": "clients/typescript"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
