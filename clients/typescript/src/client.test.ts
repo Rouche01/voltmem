@@ -73,6 +73,30 @@ test("add / search / domainStats hit expected paths and headers", async () => {
   assert.match(calls[2]!.url, /\/domain_stats$/);
 });
 
+test("add sends domain when set", async () => {
+  let body = "";
+  const client = new VoltMemClient({
+    baseUrl: "https://voltmem.example.com",
+    userId: "alice",
+    fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      body = String(init?.body ?? "");
+      return jsonResponse(200, {
+        id: "m2",
+        memory: "I prefer darker colors",
+        action: "inserted",
+        domain: "community_outcome",
+        detail: "",
+      });
+    }) as typeof fetch,
+  });
+
+  const added = await client.add("I prefer darker colors", {
+    domain: "community_outcome",
+  });
+  assert.equal((added as { domain: string }).domain, "community_outcome");
+  assert.equal(JSON.parse(body).domain, "community_outcome");
+});
+
 test("health skips API key", async () => {
   const fetchMock = mock.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const headers = init?.headers as Record<string, string>;

@@ -82,6 +82,9 @@ export class VoltMemClient {
     const body: Record<string, unknown> = { data };
     if (options.source !== undefined) body.source = options.source;
     if (options.extract !== undefined) body.extract = options.extract;
+    if (options.domain !== undefined && options.domain.trim()) {
+      body.domain = options.domain.trim();
+    }
     if (options.event_id !== undefined) body.event_id = options.event_id;
     if (options.modality !== undefined) body.modality = options.modality;
     if (options.expires_at !== undefined) body.expires_at = options.expires_at;

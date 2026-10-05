@@ -73,6 +73,30 @@ def test_add_search_domain_stats_delete():
         assert missing.status_code == 404
 
 
+def test_add_domain_skips_classifier():
+    """A write-supplied domain is stored even when the text would classify as style."""
+    with _client(VOLTMEM_DB_PATH=":memory:") as client:
+        add = client.post(
+            "/v1/users/alice/memories",
+            json={
+                "data": "I prefer darker colors and minimal fits",
+                "domain": "community_outcome",
+            },
+        )
+        assert add.status_code == 200, add.text
+        body = add.json()
+        assert body["domain"] == "community_outcome"
+
+        listed = client.get("/v1/users/alice/memories")
+        assert listed.status_code == 200
+        assert [row["domain"] for row in listed.json()] == ["community_outcome"]
+
+        graph = client.get("/v1/users/alice/graph")
+        assert graph.status_code == 200, graph.text
+        nodes = graph.json()["nodes"]
+        assert [node["domain"] for node in nodes] == ["community_outcome"]
+
+
 def test_namespace_isolation():
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -370,6 +394,7 @@ if __name__ == "__main__":
     tests = [
         test_health,
         test_add_search_domain_stats_delete,
+        test_add_domain_skips_classifier,
         test_namespace_isolation,
         test_api_key_required_when_set,
         test_clear_and_summary,

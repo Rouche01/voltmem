@@ -46,7 +46,7 @@ You choose who runs the sidecar:
 
 The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/users/{user_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. The path spelling `users` stays so current clients keep working; a `/v1/tenants/{tenant_id}` alias is planned and `users` will remain as the compatible path.
 
-A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write. Python `remember(..., domain=…)` can set the kind directly and skip classification. The sidecar HTTP add body does not forward `domain` yet, so the browser filter shows classifier output.
+A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write unless the caller sets `domain`. Python `remember(..., domain=…)` and `POST /v1/users/{user_id}/memories` with `{ "domain": "…" }` both skip classification. `POST .../events` already takes `domain` on each facet. The memory browser filter shows that stored kind.
 
 Tenant is the database. Domain is a typed partition inside it. Both live in the same SQLite table.
 

@@ -170,7 +170,7 @@ class Memory:
         *,
         layer: Optional[MemoryLayer] = None,
         similarity_fn: Optional[Callable[[str, str], float]] = None,
-        fact_extractor: Optional[HeuristicFactExtractor] = None,
+        fact_extractor: FactExtractor | None = None,
         domain_restore: Callable[[], None] | None = None,
         **kwargs: Any,
     ):
@@ -202,6 +202,7 @@ class Memory:
         *,
         source: str = "explicit_statement",
         extract: bool | None = None,
+        domain: str | None = None,
         event_id: str | None = None,
         modality: str | None = None,
         expires_at: float | None = None,
@@ -213,36 +214,45 @@ class Memory:
         or a list of message dicts. For message lists, ``extract=True`` (default)
         pulls atomic user facts before storing.
 
+        ``domain``, when set, is the fact kind and skips classification.
         Optional lifecycle fields (``event_id``, ``modality``, ``expires_at``,
         ``ttl_seconds``) apply to plain-string writes.
         """
         expires = expires_at
         if expires is None and ttl_seconds is not None:
             expires = time.time() + ttl_seconds
+        forced = domain.strip() if isinstance(domain, str) else None
+        if not forced:
+            forced = None
 
         if isinstance(data, str):
             return self._format_write(
                 self._layer.remember(
                     data,
                     source=source,
+                    domain=forced,
                     event_id=event_id,
                     modality=modality,
                     expires_at=expires,
                 )
             )
         if isinstance(data, dict):
-            return self._add_message(data, source=source)
+            written = self._add_message(data, source=source, domain=forced)
+            if written is None:
+                return []
+            return written
         if isinstance(data, list):
             if not data:
                 return []
             do_extract = extract if extract is not None else True
             if do_extract:
-                return self._add_extracted_facts(data, source=source)
+                return self._add_extracted_facts(
+                    data, source=source, domain=forced)
             out = []
             for msg in data:
                 if not isinstance(msg, dict):
                     raise TypeError("each message must be a dict with role/content")
-                result = self._add_message(msg, source=source)
+                result = self._add_message(msg, source=source, domain=forced)
                 if result is not None:
                     out.append(result)
             return out
@@ -356,29 +366,36 @@ class Memory:
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _add_extracted_facts(
-        self, messages: list[Message], *, source: str
+        self,
+        messages: list[Message],
+        *,
+        source: str,
+        domain: str | None = None,
     ) -> list[dict[str, Any]]:
         facts = self._fact_extractor.extract(messages)
         out: list[dict[str, Any]] = []
         for fact in facts:
             src = fact.source or source
-            if fact.domain:
+            chosen = domain or fact.domain or None
+            if chosen:
                 result = self._layer.remember(
-                    fact.content, domain=fact.domain, source=src)
+                    fact.content, domain=chosen, source=src)
             else:
                 result = self._layer.remember(fact.content, source=src)
             out.append(self._format_write(result))
         return out
 
     def _add_message(
-        self, msg: Message, *, source: str
+        self, msg: Message, *, source: str, domain: str | None = None,
     ) -> Optional[dict[str, Any]]:
         role = msg.get("role", "user")
         content = str(msg.get("content", "")).strip()
         if not content:
             return None
         src = source if role == "user" else "assistant_response"
-        return self._format_write(self._layer.remember(content, source=src))
+        return self._format_write(
+            self._layer.remember(content, source=src, domain=domain)
+        )
 
     @staticmethod
     def _format_write(result: WriteResult) -> dict[str, Any]:

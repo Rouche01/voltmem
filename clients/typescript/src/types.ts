@@ -68,6 +68,8 @@ export type VoltMemClientOptions = {
 export type AddOptions = {
   source?: string;
   extract?: boolean;
+  /** Fact kind. When set, the sidecar skips the profile classifier. */
+  domain?: string;
   userId?: string;
   event_id?: string;
   modality?: string;

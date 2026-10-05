@@ -22,6 +22,7 @@ class AddBody(BaseModel):
     data: AddData
     source: str = "explicit_statement"
     extract: bool | None = None
+    domain: str | None = None
     event_id: str | None = None
     modality: str | None = None
     expires_at: float | None = None
@@ -114,6 +115,8 @@ def create_app() -> FastAPI:
             kwargs["expires_at"] = body.expires_at
         if body.ttl_seconds is not None:
             kwargs["ttl_seconds"] = body.ttl_seconds
+        if body.domain is not None and body.domain.strip():
+            kwargs["domain"] = body.domain.strip()
         return mem.add(body.data, **kwargs)
 
     @app.post("/v1/users/{user_id}/events", dependencies=authed)

@@ -68,7 +68,7 @@ await bob.add("I prefer neon colors");
 | Method | Sidecar |
 |---|---|
 | `health()` | `GET /health` |
-| `add(data, opts?)` | `POST /v1/users/{userId}/memories` |
+| `add(data, opts?)` | `POST /v1/users/{userId}/memories` (`opts.domain` skips classification) |
 | `search(q, opts?)` | `GET .../memories/search` |
 | `getAll()` | `GET .../memories` |
 | `get(id)` | `GET .../memories/{id}` |

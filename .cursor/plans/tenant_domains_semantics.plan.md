@@ -13,7 +13,7 @@ todos:
     status: pending
   - id: domain-on-add
     content: "Optional domain on POST …/memories + Memory.add/remember plumbing + TS AddOptions.domain; skip classifier when set; tests for forced domain"
-    status: pending
+    status: completed
   - id: relay-profile
     content: "sidecar/profiles.py — VOLTMEM_PROFILE=relay (community_preference, community_outcome, community_rules, … + light KeywordClassifier); keep stylens default; document in SIDECAR"
     status: pending
@@ -158,7 +158,7 @@ Track as notes / issue links; implement in consumer repos after client publish:
 - [x] Glossary published; UI says Tenant / Domain (kind)
 - [ ] `/v1/tenants/{id}/memories` works; `/v1/users/{id}/…` still works
 - [ ] Client accepts `tenantId`; old `userId` still works
-- [ ] POST memory with `domain` persists that domain
+- [x] POST memory with `domain` persists that domain
 - [ ] `VOLTMEM_PROFILE=relay` installs community_* domains; tests cover profile build + one write/search
 - [ ] SIDECAR documents profile + tenant rename + domain-on-write
 
