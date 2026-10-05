@@ -154,6 +154,18 @@ def create_app() -> FastAPI:
     ) -> list[dict[str, Any]]:
         return mem_pool.for_user(user_id).get_all()
 
+    @app.get("/v1/users/{user_id}/graph", dependencies=authed)
+    def memory_graph(
+        user_id: str,
+        include_inactive: Annotated[bool, Query()] = True,
+        mem_pool: MemoryPool = Depends(get_pool),
+    ) -> dict[str, Any]:
+        """Active and superseded nodes, plus supersedes and facet edges.
+
+        ``include_inactive`` defaults to true. List and search stay active-only.
+        """
+        return mem_pool.for_user(user_id).graph(include_inactive=include_inactive)
+
     @app.get("/v1/users/{user_id}/memories/{memory_id}", dependencies=authed)
     def get_memory(
         user_id: str,

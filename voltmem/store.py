@@ -380,6 +380,18 @@ class MemoryStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def list_all(self, namespace: str) -> list[MemoryItem]:
+        """Every row in one namespace, including superseded history.
+
+        Ordered by ``created_at`` then ``id`` so graph listings stay stable.
+        ``all_active`` stays the current-truth query (``superseded_by IS NULL``).
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE namespace=? ORDER BY created_at, id",
+            (namespace,),
+        ).fetchall()
+        return [_row_to_item(r) for r in rows]
+
     def get_by_event(self, namespace: str, event_id: str) -> list[MemoryItem]:
         """All items (active and superseded) for a given event, ordered by creation time."""
         rows = self._conn.execute(

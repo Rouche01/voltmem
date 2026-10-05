@@ -267,6 +267,23 @@ class Memory:
             for item in self._layer._active()
         ]
 
+    def graph(self, *, include_inactive: bool = True) -> dict[str, Any]:
+        """Nodes plus supersedes and facet edges for this user.
+
+        Superseded rows are included when ``include_inactive`` is true (the
+        default). ``get_all`` and ``search`` stay limited to current truth.
+
+        Facet edges are a star: for each ``event_id`` shared by two or more
+        included nodes, the earliest row (then lowest id) is the hub, and
+        every other facet is an edge hub → member with ``kind`` ``"facet"``.
+        Each superseded row emits one ``kind`` ``"supersedes"`` edge to
+        ``superseded_by`` when that target is also in the node set.
+        """
+        items = self._layer.list_history()
+        if not include_inactive:
+            items = [item for item in items if item.is_active]
+        return _graph_from_items(items)
+
     def get(self, memory_id: str) -> Optional[dict[str, Any]]:
         """Return one memory by id, or None."""
         info = self._layer.inspect(memory_id)
@@ -385,6 +402,20 @@ class Memory:
             "last_confirmed_at": item.last_confirmed_at,
         }
 
+    @staticmethod
+    def _format_graph_node(item: Any) -> dict[str, Any]:
+        return {
+            "id": item.id,
+            "memory": item.content,
+            "domain": item.domain,
+            "source": item.source,
+            "active": item.is_active,
+            "superseded_by": item.superseded_by,
+            "event_id": item.event_id,
+            "created_at": item.created_at,
+            "last_confirmed_at": item.last_confirmed_at,
+        }
+
     def _format_retrieve(self, result: RetrieveResult) -> list[dict[str, Any]]:
         out = []
         for item, score in zip(result.items, result.scores):
@@ -392,3 +423,35 @@ class Memory:
             row["score"] = round(score, 4)
             out.append(row)
         return out
+
+
+def _graph_from_items(items: list[Any]) -> dict[str, Any]:
+    """Build the graph payload. Facet groups use a star on the earliest node."""
+    ordered = sorted(items, key=lambda item: (item.created_at, item.id))
+    present = {item.id for item in ordered}
+    nodes = [Memory._format_graph_node(item) for item in ordered]
+    edges: list[dict[str, Any]] = []
+    for item in ordered:
+        target = item.superseded_by
+        if target and target in present:
+            edges.append({
+                "source": item.id,
+                "target": target,
+                "kind": "supersedes",
+            })
+    by_event: dict[str, list[Any]] = {}
+    for item in ordered:
+        if not item.event_id:
+            continue
+        by_event.setdefault(item.event_id, []).append(item)
+    for group in by_event.values():
+        if len(group) < 2:
+            continue
+        hub = group[0]
+        for member in group[1:]:
+            edges.append({
+                "source": hub.id,
+                "target": member.id,
+                "kind": "facet",
+            })
+    return {"nodes": nodes, "edges": edges}

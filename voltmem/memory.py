@@ -1104,6 +1104,10 @@ class MemoryLayer:
             return
         self._vector_index.delete(item_id, self.namespace)
 
+    def list_history(self) -> list[MemoryItem]:
+        """Every memory in this namespace, including superseded rows."""
+        return self._store.list_all(self.namespace)
+
     def _active(self, domain: str | None = None, event_id: str | None = None) -> list[MemoryItem]:
         """Active memories scoped to this layer's namespace."""
         return self._store.all_active(

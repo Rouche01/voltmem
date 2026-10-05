@@ -4,10 +4,10 @@ overview: "Ship a same-origin memory browser on the VoltMem sidecar — list + i
 todos:
   - id: graph-api
     content: "Add GET /v1/users/{user_id}/graph — all rows (active + superseded), nodes + supersedes/facet edges; optional include_inactive query; keep list/search active-only"
-    status: pending
+    status: completed
   - id: store-list-all
     content: "Store/Memory helper to list every row for a namespace (not only superseded_by IS NULL); reuse for graph; thin tests in test_sidecar / store"
-    status: pending
+    status: completed
   - id: static-ui-shell
     content: "sidecar/static/index.html + FastAPI StaticFiles mount at /ui; sessionStorage for API key + user_id; same-origin fetch to /v1/*"
     status: pending
@@ -208,7 +208,7 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 
 ## Success criteria
 
-- [ ] `/graph` returns active + superseded nodes and supersedes/facet edges; tests green
+- [x] `/graph` returns active + superseded nodes and supersedes/facet edges; tests green
 - [ ] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
 - [ ] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [ ] SIDECAR + sidecar README document how to open the browser
