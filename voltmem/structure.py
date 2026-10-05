@@ -340,12 +340,16 @@ def join_structured(
     stored_text: str = "",
     *,
     conservative: bool = True,
+    anchored_attributes: frozenset[str] | None = None,
 ) -> bool:
     """True = same fact (UPDATE). Empty extract never merges.
 
     Conservative (default) will not auto-join a generic slot on slug match
     alone, and will not join when the new sentence ends a name that is not
     the stored value. Naive mode is the first extract-then-join eval.
+
+    When ``anchored_attributes`` is set, generic slots in that set require
+    explicit ``replaces`` plus a change marker to UPDATE (D3d anchor analog).
     """
     if not stored or not new:
         return False
@@ -364,6 +368,10 @@ def join_structured(
                 continue
             generic = s_attr in GENERIC_SLOT_ATTRIBUTES
             if conservative and generic:
+                if anchored_attributes and s_attr in anchored_attributes:
+                    if (n.replaces or s.replaces) and marker:
+                        return True
+                    continue
                 if _generic_slot_may_join(s, n, stored_text, new_text):
                     return True
                 continue

@@ -1260,6 +1260,20 @@ def test_conservative_join_parks_generic_slots_without_overlap():
         "User is preparing the Monday slides") is True
 
 
+def test_anchored_attributes_require_replaces_and_change_marker():
+    from voltmem.structure import join_structured
+    anchors = frozenset({"current_manager"})
+    stored = [_fact("user", "current_manager", "Dana")]
+    swap = [_fact("user", "current_manager", "Miguel", "slot", True)]
+    assert join_structured(
+        stored, swap, "User reports to Miguel", "User reports to Dana",
+        anchored_attributes=anchors) is False
+    explicit = [_fact("user", "current_manager", "Miguel", "slot", True)]
+    assert join_structured(
+        stored, explicit, "User no longer reports to Dana and now reports to Miguel",
+        "User reports to Dana", anchored_attributes=anchors) is True
+
+
 def test_heuristic_extractor_covers_known_frames_only():
     from voltmem.structure import HeuristicStructuredExtractor, join_structured
 
