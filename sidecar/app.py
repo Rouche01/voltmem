@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from .auth import require_api_key
 from .memory_pool import MemoryPool
-from .profiles import build_profile
+from .profiles import apply_domains_file, build_profile
 
 AddData = Union[str, dict[str, str], list[dict[str, str]]]
 
@@ -58,6 +58,9 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         profile = os.environ.get("VOLTMEM_PROFILE", "stylens").strip() or "stylens"
         domains, classifier = build_profile(profile)
+        domains_file = os.environ.get("VOLTMEM_DOMAINS_FILE", "").strip()
+        if domains_file:
+            domains, classifier = apply_domains_file(domains, classifier, domains_file)
         restore = domains.install()
 
         db_path = os.environ.get("VOLTMEM_DB_PATH", "voltmem_sidecar.db")

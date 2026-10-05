@@ -42,13 +42,32 @@ You choose who runs the sidecar:
 | **Tenant** | Isolation boundary: one logical database inside the shared SQLite file. A person or an app bucket. | `alice`, `relay-local` |
 | **Domain** | Fact kind plus a volatility prior. A partition inside a tenant. | `style_preference` |
 | **Memory item** | One stored fact. | “I prefer darker colors and minimal fits” |
-| **Profile** | Domain registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `stylens` |
+| **Profile** | Built-in registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `stylens` |
 
 The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/users/{user_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. The path spelling `users` stays so current clients keep working; a `/v1/tenants/{tenant_id}` alias is planned and `users` will remain as the compatible path.
 
 A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write unless the caller sets `domain`. Python `remember(..., domain=…)` and `POST /v1/users/{user_id}/memories` with `{ "domain": "…" }` both skip classification. `POST .../events` already takes `domain` on each facet. The memory browser filter shows that stored kind.
 
 Tenant is the database. Domain is a typed partition inside it. Both live in the same SQLite table.
+
+### Extra domains
+
+`VOLTMEM_PROFILE` still picks the built-in registry. The default is `stylens`. App-specific kinds do not belong in that code. Point `VOLTMEM_DOMAINS_FILE` at a JSON file and the sidecar merges it in before serving traffic:
+
+```json
+{
+  "domains": [
+    {"name": "community_preference", "volatility": 0.20},
+    {"name": "community_outcome", "volatility": 0.55}
+  ],
+  "keywords": {
+    "community_outcome": ["[outcome]", "aborted"],
+    "community_preference": ["[preference]", "allowlist"]
+  }
+}
+```
+
+`domains` are registered on top of the profile (`slot` is optional). `keywords` are optional and are checked before the profile classifier; earlier keys win. A write can still set `domain` and skip classification. One process still has one registry, so two apps that need different priors run two sidecars, each with its own file.
 
 ---
 

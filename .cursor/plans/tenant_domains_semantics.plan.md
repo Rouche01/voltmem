@@ -1,6 +1,6 @@
 ---
 name: Tenant semantics + domain profiles
-overview: "Clarify VoltMem isolation vs fact-kind: rename public userId → tenantId (path /v1/tenants/…), keep /v1/users/ as alias; ship optional domain on write; add a relay (and extensible) sidecar profile so dogfood apps are not forced through stylens classification."
+overview: "Clarify VoltMem isolation vs fact-kind: rename public userId → tenantId (path /v1/tenants/…), keep /v1/users/ as alias; ship optional domain on write; load app-specific domains from VOLTMEM_DOMAINS_FILE instead of compiling them into the library."
 todos:
   - id: naming-docs
     content: "Glossary in SIDECAR + README — tenant (isolation), domain (kind + volatility), memory item; UI labels Tenant / Domain (kind); stop calling path segment 'user' in new docs"
@@ -15,13 +15,13 @@ todos:
     content: "Optional domain on POST …/memories + Memory.add/remember plumbing + TS AddOptions.domain; skip classifier when set; tests for forced domain"
     status: completed
   - id: relay-profile
-    content: "sidecar/profiles.py — VOLTMEM_PROFILE=relay (community_preference, community_outcome, community_rules, … + light KeywordClassifier); keep stylens default; document in SIDECAR"
-    status: pending
+    content: "VOLTMEM_DOMAINS_FILE JSON merged at sidecar startup (domains + optional keywords). No app vocabulary compiled into the library. stylens stays the only built-in profile."
+    status: completed
   - id: ui-tenant-copy
     content: "Memory browser — Tenant field label; Domain (kind) filter; placeholder example relay-local; optional note that domain is classifier or write-supplied"
     status: completed
   - id: dogfood-handoff
-    content: "Note for relay-os / stylens — VOLTMEM_TENANT_ID (+ USER_ID fallback), forward domain from context-engine, set VOLTMEM_PROFILE=relay on shared sidecar (separate consumer PRs)"
+    content: "Note for relay-os / stylens — VOLTMEM_TENANT_ID (+ USER_ID fallback), forward domain from context-engine, ship a domains JSON via VOLTMEM_DOMAINS_FILE (separate consumer PRs)"
     status: pending
 isProject: true
 ---
@@ -115,24 +115,27 @@ Wire through:
 
 `add_event` facets already carry `domain` — leave as-is; document parity.
 
-## Phase 4 — `relay` sidecar profile
+## Phase 4 — domains file (no app vocabulary in the library)
 
-In [`sidecar/profiles.py`](../../sidecar/profiles.py):
+`VOLTMEM_DOMAINS_FILE` JSON is merged onto the built-in profile at startup. `stylens` stays the only code profile. Relay (and any later app) ships its own file:
 
-```python
-# illustrative — tune volatilities in implementation
-domains.register("community_preference", 0.20)   # allowlist, voice
-domains.register("community_rules", 0.15)         # sub rules notes
-domains.register("community_outcome", 0.55)       # approve / abort
-# optional: community_discovery for proposed-not-postable
+```json
+{
+  "domains": [
+    {"name": "community_preference", "volatility": 0.20},
+    {"name": "community_rules", "volatility": 0.15},
+    {"name": "community_outcome", "volatility": 0.55}
+  ],
+  "keywords": {
+    "community_outcome": ["[outcome]", "aborted"],
+    "community_preference": ["[preference]", "allowlist"]
+  }
+}
 ```
 
-- `KeywordClassifier` / chained hints for `[preference]`, `[outcome]`, “allowlist”, “aborted”, etc. (best-effort when domain omitted).
-- `build_profile("relay")`; `VOLTMEM_PROFILE=relay`.
-- Default remains `stylens` so existing fashion dogfood does not flip.
-- Shared ThinkPad sidecar: set profile to `relay` **or** run two sidecars if stylens + relay need different priors on one host (document; don’t block on multi-profile-per-process).
+Keyword hints run before the profile classifier. One process still has one registry, so two priors means two sidecars, each with its own file.
 
-**Out of scope for v1:** per-tenant domain YAML, HTTP “create domain” API. Optional follow-up: `VOLTMEM_DOMAINS_FILE` JSON merged into registry if a third app appears without wanting a code profile.
+**Out of scope:** per-tenant domain files, HTTP “create domain” API.
 
 ## Phase 5 — Dogfood handoff (not this repo’s merge gate)
 
@@ -141,8 +144,8 @@ Track as notes / issue links; implement in consumer repos after client publish:
 | Consumer | Change |
 |----------|--------|
 | relay-os `@relay/context-engine` | Prefer `tenantId`; env `VOLTMEM_TENANT_ID` with `VOLTMEM_USER_ID` fallback; pass `domain` through to client `add` (stop relying on text prefix alone, or keep prefix as prompt sugar) |
-| community-engager | Map `preference` → `community_preference`, `outcome` → `community_outcome` (or register short names in relay profile) |
-| Deploy | `VOLTMEM_PROFILE=relay` on the sidecar Community Engager uses |
+| community-engager | Map `preference` → `community_preference`, `outcome` → `community_outcome` in the domains file |
+| Deploy | `VOLTMEM_DOMAINS_FILE` pointing at Relay's JSON on the sidecar Community Engager uses |
 
 ## Non-goals
 
@@ -159,14 +162,14 @@ Track as notes / issue links; implement in consumer repos after client publish:
 - [ ] `/v1/tenants/{id}/memories` works; `/v1/users/{id}/…` still works
 - [ ] Client accepts `tenantId`; old `userId` still works
 - [x] POST memory with `domain` persists that domain
-- [ ] `VOLTMEM_PROFILE=relay` installs community_* domains; tests cover profile build + one write/search
+- [x] `VOLTMEM_DOMAINS_FILE` merges app domains and keyword hints; tests cover load + one write/search
 - [ ] SIDECAR documents profile + tenant rename + domain-on-write
 
 ## Suggested order
 
 1. `naming-docs` + `ui-tenant-copy` (cheap, unblocks mental model)
 2. `domain-on-add` + tests (unblocks correct filters even on stylens)
-3. `relay-profile`
+3. `relay-profile` — shipped as `VOLTMEM_DOMAINS_FILE`, not a compiled relay profile
 4. `api-tenants-alias` + `client-tenantId` (compat-sensitive; ship together)
 5. `dogfood-handoff` checklist for relay-os
 

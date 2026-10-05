@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -18,12 +19,15 @@ os.environ.setdefault("VOLTMEM_PROFILE", "stylens")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from sidecar.app import create_app  # noqa: E402
+from sidecar.profiles import apply_domains_file, build_profile  # noqa: E402
 
 
 def _client(**env: str) -> TestClient:
     """Fresh app with env applied for lifespan."""
     if "VOLTMEM_API_KEY" not in env:
         os.environ.pop("VOLTMEM_API_KEY", None)
+    if "VOLTMEM_DOMAINS_FILE" not in env:
+        os.environ.pop("VOLTMEM_DOMAINS_FILE", None)
     for key, value in env.items():
         os.environ[key] = value
     os.environ["VOLTMEM_EMBEDDINGS"] = "0"
@@ -95,6 +99,77 @@ def test_add_domain_skips_classifier():
         assert graph.status_code == 200, graph.text
         nodes = graph.json()["nodes"]
         assert [node["domain"] for node in nodes] == ["community_outcome"]
+
+
+def test_domains_file_merges_kinds_and_searches():
+    spec = {
+        "domains": [
+            {"name": "community_preference", "volatility": 0.20},
+            {"name": "community_outcome", "volatility": 0.55},
+        ],
+        "keywords": {
+            "community_outcome": ["[outcome]", "aborted"],
+            "community_preference": ["[preference]", "allowlist"],
+        },
+    }
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    Path(path).write_text(json.dumps(spec), encoding="utf-8")
+    try:
+        domains, classifier = apply_domains_file(*build_profile("stylens"), path)
+        assert domains.volatility("community_outcome") == 0.55
+        assert domains.volatility("style_preference") == 0.08
+        restore = domains.install()
+        try:
+            assert classifier.classify_domain("[outcome] aborted the post") == "community_outcome"
+            assert classifier.classify_domain("I prefer darker colors") == "style_preference"
+        finally:
+            restore()
+
+        with _client(VOLTMEM_DB_PATH=":memory:", VOLTMEM_DOMAINS_FILE=path) as client:
+            add = client.post(
+                "/v1/users/relay-local/memories",
+                json={"data": "[outcome] aborted the community post"},
+            )
+            assert add.status_code == 200, add.text
+            body = add.json()
+            assert body["domain"] == "community_outcome"
+
+            stats = client.get("/v1/users/relay-local/domain_stats")
+            assert stats.status_code == 200
+            assert stats.json()["community_outcome"]["prior"] == 0.55
+
+            search = client.get(
+                "/v1/users/relay-local/memories/search",
+                params={"q": "aborted community post", "limit": 3},
+            )
+            assert search.status_code == 200
+            hits = search.json()
+            assert any(
+                hit["id"] == body["id"] and hit["domain"] == "community_outcome"
+                for hit in hits
+            )
+    finally:
+        os.environ.pop("VOLTMEM_DOMAINS_FILE", None)
+        os.remove(path)
+
+
+def test_domains_file_rejects_unregistered_keyword():
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    Path(path).write_text(
+        json.dumps({"keywords": {"community_outcome": ["[outcome]"]}}),
+        encoding="utf-8",
+    )
+    try:
+        try:
+            apply_domains_file(*build_profile("stylens"), path)
+        except ValueError as exc:
+            assert "community_outcome" in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+    finally:
+        os.remove(path)
 
 
 def test_namespace_isolation():
@@ -395,6 +470,8 @@ if __name__ == "__main__":
         test_health,
         test_add_search_domain_stats_delete,
         test_add_domain_skips_classifier,
+        test_domains_file_merges_kinds_and_searches,
+        test_domains_file_rejects_unregistered_keyword,
         test_namespace_isolation,
         test_api_key_required_when_set,
         test_clear_and_summary,

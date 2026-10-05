@@ -16,7 +16,7 @@ same priors as [`examples/custom_classifier.py`](../examples/custom_classifier.p
 | **Tenant** | Isolation boundary (person or app bucket). Stored as SQLite `namespace`. | `relay-local`, `alice` |
 | **Domain** | Fact kind plus a volatility prior, inside one tenant. | `style_preference` |
 | **Memory item** | One stored fact. | approve/abort outcome text |
-| **Profile** | Process-wide registry and classifier (`VOLTMEM_PROFILE`). | `stylens` |
+| **Profile** | Built-in registry and classifier (`VOLTMEM_PROFILE`). Extra kinds come from `VOLTMEM_DOMAINS_FILE`. | `stylens` |
 
 HTTP still addresses a tenant as `/v1/users/{user_id}`. That segment is the tenant id; the word `users` in the path is the compatible spelling. The profile classifier assigns `domain` on write. Full glossary: [docs/SIDECAR.md](../docs/SIDECAR.md#concepts).
 
@@ -60,7 +60,8 @@ python -m sidecar
 | `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use `/data/voltmem.db` in Docker). File DBs use WAL automatically. |
 | `VOLTMEM_EMBEDDINGS` | `1` (truthy) | `0`/`false` disables embedder (hashing fallback) |
 | `VOLTMEM_API_KEY` | _(empty)_ | When set, require matching `X-API-Key` on `/v1/*` |
-| `VOLTMEM_PROFILE` | `stylens` | Domain registry + classifier profile |
+| `VOLTMEM_PROFILE` | `stylens` | Built-in domain registry and classifier. One process, one profile. |
+| `VOLTMEM_DOMAINS_FILE` | _(unset)_ | JSON file merged at startup: `domains` (`name`, `volatility`, optional `slot`) and optional `keywords`. Keyword hints run before the profile classifier. |
 | `VOLTMEM_MAINTENANCE` | `1` | Background daemon for due tasks (`0` to disable) |
 | `VOLTMEM_MAINTENANCE_CHECK_INTERVAL` | `60` | Seconds between daemon ticks |
 | `VOLTMEM_EXPIRE_INTERVAL` | `3600` | Min seconds between `expire_cleanup` per tenant |
