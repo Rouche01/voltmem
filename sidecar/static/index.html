@@ -118,11 +118,42 @@
       margin-bottom: 12px;
     }
 
-    .toolbar button {
+    .toolbar button,
+    .view-toggle button {
       background: transparent;
       color: var(--accent);
       border: 1px solid var(--accent);
     }
+
+    .view-toggle {
+      display: flex;
+    }
+
+    .view-toggle button {
+      border-radius: 0;
+    }
+
+    .view-toggle button:first-child { border-radius: 8px 0 0 8px; }
+    .view-toggle button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+
+    .view-toggle button[aria-pressed="true"] {
+      background: var(--accent);
+      color: #f7fffe;
+    }
+
+    #graph-wrap { min-height: 480px; }
+    #graph { display: block; width: 100%; }
+    #graph .edge-supersedes { stroke: #1c1915; stroke-width: 1.5; }
+    #graph .edge-facet { stroke: #8a8175; stroke-width: 1.25; stroke-dasharray: 4 3; }
+    #graph .node { cursor: pointer; }
+    #graph .node.is-inactive { opacity: 0.38; }
+    #graph .node text {
+      font-size: 11px;
+      fill: #1c1915;
+      font-family: ui-sans-serif, "Segoe UI", sans-serif;
+    }
+    #graph .node.is-selected circle { stroke: #1c1915; stroke-width: 2.5; }
+    #graph-legend { margin: 8px 4px 0; }
 
     .workspace {
       display: grid;
@@ -146,6 +177,11 @@
       padding: 0;
       display: grid;
       gap: 8px;
+    }
+
+    #list[hidden],
+    #graph-wrap[hidden] {
+      display: none;
     }
 
     .row {
@@ -246,10 +282,18 @@
         <input id="filter-source" type="search" placeholder="Substring">
       </label>
       <button id="refresh" type="button">Refresh</button>
+      <div class="view-toggle" role="group" aria-label="View">
+        <button id="view-list" type="button" aria-pressed="true">List</button>
+        <button id="view-graph" type="button" aria-pressed="false">Graph</button>
+      </div>
     </div>
     <div class="workspace">
-      <section class="panel" aria-label="Memories">
+      <section class="panel" id="browser-pane" aria-label="Memories">
         <ul id="list"></ul>
+        <div id="graph-wrap" hidden>
+          <svg id="graph" role="img" aria-label="Memory graph"></svg>
+          <p id="graph-legend" class="secondary"></p>
+        </div>
       </section>
       <section class="panel" id="detail" aria-live="polite">
         <p class="empty">Select a memory to inspect scoring.</p>
@@ -268,16 +312,25 @@
     ];
 
     const statusEl = document.getElementById("status");
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const DOMAIN_COLORS = ["#0f3d3e", "#8c4a2f", "#3d5a80", "#6b4c7a", "#2f6b4f", "#8a6a2f", "#7a3b4a", "#3f5e4a"];
     const listEl = document.getElementById("list");
+    const graphWrap = document.getElementById("graph-wrap");
+    const graphEl = document.getElementById("graph");
+    const legendEl = document.getElementById("graph-legend");
     const detailEl = document.getElementById("detail");
     const domainEl = document.getElementById("filter-domain");
     const textEl = document.getElementById("filter-text");
     const sourceEl = document.getElementById("filter-source");
+    const viewListBtn = document.getElementById("view-list");
+    const viewGraphBtn = document.getElementById("view-graph");
 
     let session = { apiKey: "", userId: "" };
     let memories = [];
+    let graph = { nodes: [], edges: [] };
     let selectedId = "";
     let loadError = "";
+    let view = "list";
 
     function setStatus(message, isError) {
       statusEl.textContent = message || "";
@@ -332,10 +385,182 @@
 
     function fillDomains() {
       const current = domainEl.value;
-      const domains = Array.from(new Set(memories.map((item) => item.domain))).sort();
+      const source = graph.nodes.length ? graph.nodes : memories;
+      const domains = Array.from(new Set(source.map((item) => item.domain).filter(Boolean))).sort();
       domainEl.replaceChildren(new Option("All domains", ""));
       for (const domain of domains) domainEl.append(new Option(domain, domain));
       domainEl.value = domains.includes(current) ? current : "";
+    }
+
+    function domainColor(domain) {
+      const text = domain || "unknown";
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+      return DOMAIN_COLORS[hash % DOMAIN_COLORS.length];
+    }
+
+    function layoutGraph(nodes, edges, width, height) {
+      const placed = nodes.map((node) => ({ ...node, x: width / 2, y: height / 2, vx: 0, vy: 0 }));
+      const domains = Array.from(new Set(placed.map((node) => node.domain || "unknown")));
+      const homes = new Map();
+      domains.forEach((domain, index) => {
+        const angle = (index / Math.max(domains.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        const radius = Math.min(width, height) * 0.28;
+        homes.set(domain, {
+          x: width / 2 + Math.cos(angle) * radius,
+          y: height / 2 + Math.sin(angle) * radius,
+        });
+      });
+      const seen = new Map();
+      for (const node of placed) {
+        const key = node.domain || "unknown";
+        const count = seen.get(key) || 0;
+        seen.set(key, count + 1);
+        const home = homes.get(key);
+        node.x = home.x + Math.cos(count * 0.9) * 16;
+        node.y = home.y + Math.sin(count * 0.9) * 16;
+      }
+      const byId = new Map(placed.map((node) => [node.id, node]));
+      const links = edges.filter((edge) =>
+        (edge.kind === "supersedes" || edge.kind === "facet")
+        && byId.has(edge.source) && byId.has(edge.target)
+      );
+      for (let tick = 0; tick < 160; tick++) {
+        for (let i = 0; i < placed.length; i++) {
+          for (let j = i + 1; j < placed.length; j++) {
+            const dx = placed[j].x - placed[i].x;
+            const dy = placed[j].y - placed[i].y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+            const force = 820 / (dist * dist);
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            placed[i].vx -= fx;
+            placed[i].vy -= fy;
+            placed[j].vx += fx;
+            placed[j].vy += fy;
+          }
+        }
+        for (const edge of links) {
+          const a = byId.get(edge.source);
+          const b = byId.get(edge.target);
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+          const rest = edge.kind === "supersedes" ? 96 : 72;
+          const mag = (dist - rest) * 0.045;
+          const fx = (dx / dist) * mag;
+          const fy = (dy / dist) * mag;
+          a.vx += fx;
+          a.vy += fy;
+          b.vx -= fx;
+          b.vy -= fy;
+        }
+        for (const node of placed) {
+          const home = homes.get(node.domain || "unknown");
+          node.vx += (home.x - node.x) * 0.025;
+          node.vy += (home.y - node.y) * 0.025;
+        }
+        const pad = 28;
+        for (const node of placed) {
+          node.vx *= 0.72;
+          node.vy *= 0.72;
+          node.x = Math.max(pad, Math.min(width - pad, node.x + node.vx));
+          node.y = Math.max(pad, Math.min(height - 36, node.y + node.vy));
+        }
+      }
+      return { placed, links, byId };
+    }
+
+    function renderGraph() {
+      graphEl.replaceChildren();
+      const shown = (graph.nodes || []).filter(matches);
+      if (!session.userId) {
+        legendEl.textContent = "Connect with a user id to load the graph.";
+        return;
+      }
+      if (loadError) {
+        legendEl.textContent = loadError;
+        return;
+      }
+      if (!(graph.nodes || []).length) {
+        legendEl.textContent = "No memories to draw for this user.";
+        return;
+      }
+      if (!shown.length) {
+        legendEl.textContent = "No memories match these filters.";
+        return;
+      }
+      const width = Math.max(320, graphWrap.clientWidth || 640);
+      const height = 460;
+      graphEl.setAttribute("viewBox", "0 0 " + width + " " + height);
+      graphEl.setAttribute("height", String(height));
+      const visible = new Set(shown.map((node) => node.id));
+      const edges = (graph.edges || []).filter((edge) => visible.has(edge.source) && visible.has(edge.target));
+      const { placed, links, byId } = layoutGraph(shown, edges, width, height);
+      for (const edge of links) {
+        const source = byId.get(edge.source);
+        const target = byId.get(edge.target);
+        const line = document.createElementNS(SVG_NS, "line");
+        line.setAttribute("x1", source.x);
+        line.setAttribute("y1", source.y);
+        line.setAttribute("x2", target.x);
+        line.setAttribute("y2", target.y);
+        line.setAttribute("class", "edge-" + edge.kind);
+        graphEl.append(line);
+      }
+      for (const node of placed) {
+        const group = document.createElementNS(SVG_NS, "g");
+        group.setAttribute("class", "node" + (node.active ? "" : " is-inactive") + (node.id === selectedId ? " is-selected" : ""));
+        group.setAttribute("tabindex", "0");
+        group.setAttribute("role", "button");
+        group.setAttribute("aria-label", (node.memory || node.id) + (node.active ? "" : ", replaced"));
+        const text = node.memory || "";
+        const shownText = text.length > 42 ? text.slice(0, 41) + "…" : text;
+        const hit = document.createElementNS(SVG_NS, "rect");
+        const hitWidth = Math.min(180, Math.max(56, shownText.length * 6.4));
+        hit.setAttribute("x", node.x - hitWidth / 2);
+        hit.setAttribute("y", node.y - 16);
+        hit.setAttribute("width", hitWidth);
+        hit.setAttribute("height", 44);
+        hit.setAttribute("fill", "transparent");
+        const circle = document.createElementNS(SVG_NS, "circle");
+        circle.setAttribute("cx", node.x);
+        circle.setAttribute("cy", node.y);
+        circle.setAttribute("r", node.id === selectedId ? 11 : 8);
+        circle.setAttribute("fill", domainColor(node.domain));
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("x", node.x);
+        label.setAttribute("y", node.y + 22);
+        label.textContent = shownText;
+        group.append(hit, circle, label);
+        const open = () => selectMemory(node.id);
+        group.addEventListener("click", open);
+        group.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        });
+        graphEl.append(group);
+      }
+      const kinds = new Set(links.map((edge) => edge.kind));
+      const parts = ["Color is domain."];
+      if (placed.some((node) => !node.active)) parts.push("Faded nodes are replaced.");
+      if (kinds.has("supersedes")) parts.push("Solid line replaces.");
+      if (kinds.has("facet")) parts.push("Dashed line shares an event.");
+      if (!kinds.size) parts.push("No replacement or shared-event links yet.");
+      legendEl.textContent = parts.join(" ");
+    }
+
+    function renderView() {
+      const graphMode = view === "graph";
+      listEl.hidden = graphMode;
+      graphWrap.hidden = !graphMode;
+      viewListBtn.setAttribute("aria-pressed", graphMode ? "false" : "true");
+      viewGraphBtn.setAttribute("aria-pressed", graphMode ? "true" : "false");
+      if (graphMode) renderGraph();
+      else renderList();
     }
 
     function renderList() {
@@ -420,7 +645,7 @@
 
     async function selectMemory(id) {
       selectedId = id;
-      renderList();
+      renderView();
       setStatus("Loading inspect…");
       try {
         const info = await api(userPath() + "/memories/" + encodeURIComponent(id));
@@ -439,19 +664,27 @@
     async function loadMemories() {
       if (!session.userId) {
         memories = [];
-        renderList();
+        graph = { nodes: [], edges: [] };
+        renderView();
         setStatus("Enter a user id.", true);
         return;
       }
       setStatus("Loading memories…");
       loadError = "";
       try {
-        memories = await api(userPath() + "/memories");
-        if (!Array.isArray(memories)) memories = [];
+        const listed = await api(userPath() + "/memories");
+        const plotted = await api(userPath() + "/graph");
+        memories = Array.isArray(listed) ? listed : [];
+        graph = plotted && Array.isArray(plotted.nodes) ? plotted : { nodes: [], edges: [] };
+        if (!Array.isArray(graph.edges)) graph.edges = [];
         fillDomains();
-        renderList();
-        setStatus(memories.length + " active " + (memories.length === 1 ? "memory" : "memories"));
-        if (selectedId && memories.some((item) => item.id === selectedId)) {
+        renderView();
+        const replaced = graph.nodes.filter((node) => !node.active).length;
+        const summary = memories.length + " active " + (memories.length === 1 ? "memory" : "memories");
+        setStatus(replaced ? summary + " · " + replaced + " replaced" : summary);
+        const known = memories.some((item) => item.id === selectedId)
+          || graph.nodes.some((node) => node.id === selectedId);
+        if (selectedId && known) {
           await selectMemory(selectedId);
         } else if (selectedId) {
           selectedId = "";
@@ -463,8 +696,9 @@
         }
       } catch (err) {
         memories = [];
+        graph = { nodes: [], edges: [] };
         loadError = err.message || "Could not load memories.";
-        renderList();
+        renderView();
         setStatus(loadError, true);
       }
     }
@@ -481,9 +715,20 @@
     });
 
     document.getElementById("refresh").addEventListener("click", () => loadMemories());
-    textEl.addEventListener("input", renderList);
-    sourceEl.addEventListener("input", renderList);
-    domainEl.addEventListener("change", renderList);
+    textEl.addEventListener("input", renderView);
+    sourceEl.addEventListener("input", renderView);
+    domainEl.addEventListener("change", renderView);
+    viewListBtn.addEventListener("click", () => {
+      view = "list";
+      renderView();
+    });
+    viewGraphBtn.addEventListener("click", () => {
+      view = "graph";
+      renderView();
+    });
+    window.addEventListener("resize", () => {
+      if (view === "graph") renderGraph();
+    });
 
     const stored = loadSession();
     if (stored) {
@@ -492,7 +737,7 @@
       document.getElementById("user-id").value = session.userId;
       loadMemories();
     } else {
-      renderList();
+      renderView();
       setStatus("Enter an API key and user id. The key stays in this tab.");
     }
   </script>

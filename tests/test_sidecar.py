@@ -352,6 +352,10 @@ def test_ui_shell_is_open_and_has_list_inspect():
             assert "filter-source" in body
             assert "effective_volatility" in body
             assert "protection_weight" in body
+            assert 'id="view-graph"' in body
+            assert "/graph" in body
+            assert "edge-supersedes" in body
+            assert "edge-facet" in body
             assert client.get("/health").status_code == 200
             denied = client.get("/v1/users/alice/memories")
             assert denied.status_code == 401

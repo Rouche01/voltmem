@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: graph-view
     content: Second pane — SVG or vendored Cytoscape; color by domain; fade inactive; edges supersedes + facet only; no all-pairs similarity in v1
-    status: pending
+    status: completed
   - id: docs-smoke
     content: Document /ui + /graph in sidecar/README.md and docs/SIDECAR.md; one curl + browser smoke for local Docker
     status: pending
@@ -220,7 +220,7 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 
 - [x] `/graph` returns active + superseded nodes and supersedes/facet edges; tests green
 - [x] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
-- [ ] Graph view renders replacement chain when a test/fixture supersedes a fact
+- [x] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [ ] SIDECAR + sidecar README document how to open the browser
 
 ## Suggested order of work
