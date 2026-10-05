@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: docs-smoke
     content: Document /ui + /graph in sidecar/README.md and docs/SIDECAR.md; one curl + browser smoke for local Docker
-    status: pending
+    status: completed
 isProject: true
 ---
 
@@ -221,7 +221,7 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 - [x] `/graph` returns active + superseded nodes and supersedes/facet edges; tests green
 - [x] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
 - [x] Graph view renders replacement chain when a test/fixture supersedes a fact
-- [ ] SIDECAR + sidecar README document how to open the browser
+- [x] SIDECAR + sidecar README document how to open the browser
 
 ## Suggested order of work
 

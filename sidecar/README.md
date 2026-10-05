@@ -63,7 +63,7 @@ python -m sidecar
 | `HOST` | `0.0.0.0` | Bind address (`python -m sidecar`) |
 | `PORT` | `8080` | Listen port |
 
-`GET /health` is always unauthenticated.
+`GET /health` and `GET /ui` are always unauthenticated. `/v1/*` still requires `X-API-Key` when `VOLTMEM_API_KEY` is set.
 
 ## API
 
@@ -73,7 +73,9 @@ python -m sidecar
 | POST | `/v1/users/{user_id}/memories` |
 | GET | `/v1/users/{user_id}/memories/search?q=&limit=&min_score=` |
 | GET | `/v1/users/{user_id}/memories` |
+| GET | `/v1/users/{user_id}/graph?include_inactive=` |
 | GET | `/v1/users/{user_id}/memories/{memory_id}` |
+| GET | `/ui` |
 | DELETE | `/v1/users/{user_id}/memories/{memory_id}` |
 | DELETE | `/v1/users/{user_id}/memories` (clear) |
 | GET | `/v1/users/{user_id}/summary` |
@@ -124,6 +126,27 @@ Body: `{ "data": <string | message | messages>, "source"?: "...", "extract"?: bo
 curl -s "http://127.0.0.1:8080/v1/users/alice/memories/search?q=style%20preferences&limit=5" \
   -H "X-API-Key: $VOLTMEM_API_KEY"
 ```
+
+### Graph
+
+Active and superseded rows for one user, plus the edges already stored in SQLite. List and search stay current-truth only.
+
+```bash
+curl -s "http://127.0.0.1:8080/v1/users/relay-local/graph" \
+  -H "X-API-Key: $VOLTMEM_API_KEY" | jq '.nodes | length'
+```
+
+`include_inactive` defaults to true. `include_inactive=false` returns the same rows as `GET .../memories`.
+
+Each replaced row emits one `supersedes` edge to `superseded_by`. Memories that share an `event_id` form a star: the earliest row is the hub, and each other facet is a `facet` edge from that hub.
+
+### Memory browser
+
+Open [http://127.0.0.1:8080/ui](http://127.0.0.1:8080/ui) while the sidecar is running (Docker or `python -m sidecar`). Paste the same `VOLTMEM_API_KEY` you started the process with, and the tenant id (`relay-local` for Relay). Both stay in this tab’s `sessionStorage`. Leave the key blank when the sidecar was started without `VOLTMEM_API_KEY`.
+
+**List** is `GET .../memories`, with text, domain, and source filters. A row opens `GET .../memories/{id}` (volatility, protection, staleness, surprise, mismatch, age). **Graph** draws the `/graph` payload in the page: color by domain, faded replaced nodes, solid replacement lines, dashed shared-event lines. Memories with no links still show, grouped by domain.
+
+For a laptop-only sidecar, start with `HOST=127.0.0.1` so `/ui` and `/v1` are not on other interfaces.
 
 ### Domain stats (prior calibration)
 

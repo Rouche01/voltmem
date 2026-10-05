@@ -143,6 +143,12 @@ Cloudflare Worker secrets: `VOLTMEM_URL`, `VOLTMEM_API_KEY` — never expose the
 
 ---
 
+## Memory browser
+
+Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a user id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/users/{user_id}/graph`. `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
+
+---
+
 ## Smoke test (curl)
 
 ```bash
@@ -158,6 +164,11 @@ curl -s -X POST "$BASE/v1/users/alice/memories" \
 
 curl -s "$BASE/v1/users/alice/memories/search?q=style%20preferences&limit=3" \
   -H "X-API-Key: $KEY"
+
+curl -s "$BASE/v1/users/relay-local/graph" \
+  -H "X-API-Key: $KEY" | jq '.nodes | length'
+
+# browser: open "$BASE/ui" and paste KEY + user id
 ```
 
 Full route table: [sidecar/README.md](../sidecar/README.md).
