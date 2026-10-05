@@ -210,6 +210,7 @@ def test_api_key_required_when_set():
             )
             assert denied.status_code == 401
             assert client.get("/v1/users/alice/graph").status_code == 401
+            assert client.get("/v1/tenants/alice/memories").status_code == 401
 
             wrong = client.post(
                 "/v1/users/alice/memories",
@@ -428,6 +429,29 @@ def test_graph_facet_edges_are_a_star():
         assert {row["id"] for row in listed} == set(ids)
 
 
+def test_tenants_path_aliases_users():
+    with _client(VOLTMEM_DB_PATH=":memory:") as client:
+        added = client.post(
+            "/v1/tenants/alice/memories",
+            json={"data": "I live in Berlin"},
+        )
+        assert added.status_code == 200, added.text
+        mid = added.json()["id"]
+        via_users = client.get("/v1/users/alice/memories")
+        assert via_users.status_code == 200, via_users.text
+        assert via_users.json()[0]["id"] == mid
+        via_tenants = client.get("/v1/tenants/alice/memories")
+        assert via_tenants.json()[0]["id"] == mid
+
+        spec = client.get("/openapi.json")
+        assert spec.status_code == 200, spec.text
+        paths = spec.json()["paths"]
+        users_get = paths["/v1/users/{tenant_id}/memories"]["get"]
+        tenants_get = paths["/v1/tenants/{tenant_id}/memories"]["get"]
+        assert users_get.get("deprecated") is True
+        assert tenants_get.get("deprecated") is not True
+
+
 def test_ui_shell_is_open_and_has_list_inspect():
     previous = os.environ.get("VOLTMEM_API_KEY")
     try:
@@ -445,7 +469,7 @@ def test_ui_shell_is_open_and_has_list_inspect():
             body = page.text
             assert 'id="memory-browser"' in body
             assert "sessionStorage" in body
-            assert "/v1/users/" in body
+            assert "/v1/tenants/" in body
             assert "filter-text" in body
             assert "filter-domain" in body
             assert "filter-source" in body
@@ -480,6 +504,7 @@ if __name__ == "__main__":
         test_store_list_all_includes_superseded_rows,
         test_graph_supersedes_keeps_list_active_only,
         test_graph_facet_edges_are_a_star,
+        test_tenants_path_aliases_users,
         test_ui_shell_is_open_and_has_list_inspect,
     ]
     failed = 0

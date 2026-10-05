@@ -86,7 +86,11 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="VoltMem Sidecar",
         version="0.1.0",
-        description="HTTP surface over VoltMem create_memory (add/search/domain_stats).",
+        description=(
+            "HTTP surface over VoltMem create_memory. "
+            "Canonical routes are /v1/tenants/{tenant_id}/…. "
+            "/v1/users/{tenant_id}/… is a deprecated alias for the same tenant id."
+        ),
         lifespan=lifespan,
     )
 
@@ -99,13 +103,13 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.post("/v1/users/{user_id}/memories", dependencies=authed)
+    @app.post("/v1/tenants/{tenant_id}/memories", dependencies=authed)
     def add_memory(
-        user_id: str,
+        tenant_id: str,
         body: AddBody,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> Any:
-        mem = mem_pool.for_user(user_id)
+        mem = mem_pool.for_user(tenant_id)
         kwargs: dict[str, Any] = {"source": body.source}
         if body.extract is not None:
             kwargs["extract"] = body.extract
@@ -122,49 +126,49 @@ def create_app() -> FastAPI:
             kwargs["domain"] = body.domain.strip()
         return mem.add(body.data, **kwargs)
 
-    @app.post("/v1/users/{user_id}/events", dependencies=authed)
+    @app.post("/v1/tenants/{tenant_id}/events", dependencies=authed)
     def add_event(
-        user_id: str,
+        tenant_id: str,
         body: AddEventBody,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> Any:
-        mem = mem_pool.for_user(user_id)
+        mem = mem_pool.for_user(tenant_id)
         return mem.add_event(
             event_id=body.event_id,
             facets=body.facets,
             source=body.source,
         )
 
-    @app.get("/v1/users/{user_id}/events/{event_id}", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/events/{event_id}", dependencies=authed)
     def get_event(
-        user_id: str,
+        tenant_id: str,
         event_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> list[dict[str, Any]]:
-        return mem_pool.for_user(user_id).get_event(event_id)
+        return mem_pool.for_user(tenant_id).get_event(event_id)
 
-    @app.get("/v1/users/{user_id}/memories/search", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/memories/search", dependencies=authed)
     def search_memories(
-        user_id: str,
+        tenant_id: str,
         q: Annotated[str, Query(min_length=1)],
         limit: Annotated[int, Query(ge=1, le=100)] = 5,
         min_score: Annotated[float, Query(ge=0.0, le=1.0)] = 0.0,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> list[dict[str, Any]]:
-        return mem_pool.for_user(user_id).search(
+        return mem_pool.for_user(tenant_id).search(
             q, limit=limit, min_score=min_score
         )
 
-    @app.get("/v1/users/{user_id}/memories", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/memories", dependencies=authed)
     def list_memories(
-        user_id: str,
+        tenant_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> list[dict[str, Any]]:
-        return mem_pool.for_user(user_id).get_all()
+        return mem_pool.for_user(tenant_id).get_all()
 
-    @app.get("/v1/users/{user_id}/graph", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/graph", dependencies=authed)
     def memory_graph(
-        user_id: str,
+        tenant_id: str,
         include_inactive: Annotated[bool, Query()] = True,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
@@ -172,15 +176,15 @@ def create_app() -> FastAPI:
 
         ``include_inactive`` defaults to true. List and search stay active-only.
         """
-        return mem_pool.for_user(user_id).graph(include_inactive=include_inactive)
+        return mem_pool.for_user(tenant_id).graph(include_inactive=include_inactive)
 
-    @app.get("/v1/users/{user_id}/memories/{memory_id}", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/memories/{memory_id}", dependencies=authed)
     def get_memory(
-        user_id: str,
+        tenant_id: str,
         memory_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
-        row = mem_pool.for_user(user_id).get(memory_id)
+        row = mem_pool.for_user(tenant_id).get(memory_id)
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -189,15 +193,15 @@ def create_app() -> FastAPI:
         return row
 
     @app.delete(
-        "/v1/users/{user_id}/memories/{memory_id}",
+        "/v1/tenants/{tenant_id}/memories/{memory_id}",
         dependencies=authed,
     )
     def delete_memory(
-        user_id: str,
+        tenant_id: str,
         memory_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, bool]:
-        ok = mem_pool.for_user(user_id).delete(memory_id)
+        ok = mem_pool.for_user(tenant_id).delete(memory_id)
         if not ok:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -205,37 +209,37 @@ def create_app() -> FastAPI:
             )
         return {"deleted": True}
 
-    @app.delete("/v1/users/{user_id}/memories", dependencies=authed)
+    @app.delete("/v1/tenants/{tenant_id}/memories", dependencies=authed)
     def clear_memories(
-        user_id: str,
+        tenant_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, bool]:
-        mem_pool.for_user(user_id).clear()
+        mem_pool.for_user(tenant_id).clear()
         return {"cleared": True}
 
-    @app.get("/v1/users/{user_id}/summary", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/summary", dependencies=authed)
     def summary(
-        user_id: str,
+        tenant_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
-        return mem_pool.for_user(user_id).summary()
+        return mem_pool.for_user(tenant_id).summary()
 
-    @app.get("/v1/users/{user_id}/domain_stats", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/domain_stats", dependencies=authed)
     def domain_stats(
-        user_id: str,
+        tenant_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
-        return mem_pool.for_user(user_id).domain_stats()
+        return mem_pool.for_user(tenant_id).domain_stats()
 
     # ── maintenance endpoints ─────────────────────────────────────────────────
 
-    @app.post("/v1/users/{user_id}/maintenance/trigger", dependencies=authed)
+    @app.post("/v1/tenants/{tenant_id}/maintenance/trigger", dependencies=authed)
     def maintenance_trigger(
-        user_id: str,
+        tenant_id: str,
         body: MaintenanceTriggerBody,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
-        """Run a maintenance task for a user.
+        """Run a maintenance task for a tenant.
 
         Pass ``task`` to run a specific task, or omit to run the default set
         (``expire_cleanup``, flag tasks, ``consolidate``, ``reconcile_twins``).
@@ -244,7 +248,7 @@ def create_app() -> FastAPI:
         ``dry_run=true`` to preview. Returns a ``run_id`` for
         ``POST .../maintenance/rollback``.
         """
-        mem = mem_pool.for_user(user_id)
+        mem = mem_pool.for_user(tenant_id)
         from voltmem import MaintenanceWindow
         mw = MaintenanceWindow(mem.layer)
         from voltmem.maintenance import (
@@ -272,14 +276,14 @@ def create_app() -> FastAPI:
 
         return mw.run_all(dry_run=body.dry_run)
 
-    @app.post("/v1/users/{user_id}/maintenance/rollback", dependencies=authed)
+    @app.post("/v1/tenants/{tenant_id}/maintenance/rollback", dependencies=authed)
     def maintenance_rollback(
-        user_id: str,
+        tenant_id: str,
         body: MaintenanceRollbackBody,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> dict[str, Any]:
         """Undo a ledgered maintenance run (supersedes + purged snapshots)."""
-        mem = mem_pool.for_user(user_id)
+        mem = mem_pool.for_user(tenant_id)
         try:
             return mem.layer.rollback_maintenance(body.run_id)
         except KeyError as e:
@@ -291,9 +295,9 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
             ) from e
 
-    @app.get("/v1/users/{user_id}/maintenance/tasks", dependencies=authed)
+    @app.get("/v1/tenants/{tenant_id}/maintenance/tasks", dependencies=authed)
     def maintenance_tasks(
-        user_id: str,
+        tenant_id: str,
         mem_pool: MemoryPool = Depends(get_pool),
     ) -> list[dict[str, Any]]:
         """List available maintenance tasks."""
@@ -340,6 +344,23 @@ def create_app() -> FastAPI:
                 "default_run_all": True,
             },
         ]
+
+    for route in list(app.routes):
+        path = getattr(route, "path", "")
+        endpoint = getattr(route, "endpoint", None)
+        methods = getattr(route, "methods", None)
+        if endpoint is None or not path.startswith("/v1/tenants/") or not methods:
+            continue
+        alias = "/v1/users/" + path.removeprefix("/v1/tenants/")
+        app.add_api_route(
+            alias,
+            endpoint,
+            methods=[method for method in methods if method != "HEAD"],
+            dependencies=authed,
+            deprecated=True,
+            operation_id=f"{endpoint.__name__}_users_alias",
+            summary="Deprecated alias. Prefer /v1/tenants/{tenant_id}/….",
+        )
 
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount(

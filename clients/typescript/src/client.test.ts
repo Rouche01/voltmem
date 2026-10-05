@@ -62,7 +62,7 @@ test("add / search / domainStats hit expected paths and headers", async () => {
   assert.equal(stats.style_preference?.prior, 0.08);
 
   assert.equal(calls.length, 3);
-  assert.match(calls[0]!.url, /\/v1\/users\/alice\/memories$/);
+  assert.match(calls[0]!.url, /\/v1\/tenants\/alice\/memories$/);
   assert.equal(calls[0]!.init?.method, "POST");
   assert.equal(
     (calls[0]!.init?.headers as Record<string, string>)["X-API-Key"],
@@ -143,13 +143,47 @@ test("forUser overrides tenant", async () => {
   });
 
   await client.forUser("bob").getAll();
-  assert.match(seen, /\/v1\/users\/bob\/memories$/);
+  assert.match(seen, /\/v1\/tenants\/bob\/memories$/);
 });
 
-test("requires userId", async () => {
+test("forTenant overrides tenant", async () => {
+  let seen = "";
+  const client = new VoltMemClient({
+    baseUrl: "https://voltmem.example.com",
+    tenantId: "alice",
+    fetch: (async (input) => {
+      seen = String(input);
+      return jsonResponse(200, []);
+    }) as typeof fetch,
+  });
+
+  await client.forTenant("relay-local").getAll();
+  assert.match(seen, /\/v1\/tenants\/relay-local\/memories$/);
+});
+
+test("tenantId wins over userId", async () => {
+  let seen = "";
+  const client = new VoltMemClient({
+    baseUrl: "https://voltmem.example.com",
+    userId: "alice",
+    tenantId: "relay-local",
+    fetch: (async (input) => {
+      seen = String(input);
+      return jsonResponse(200, []);
+    }) as typeof fetch,
+  });
+
+  await client.getAll({ userId: "bob" });
+  assert.match(seen, /\/v1\/tenants\/bob\/memories$/);
+
+  await client.getAll();
+  assert.match(seen, /\/v1\/tenants\/relay-local\/memories$/);
+});
+
+test("requires tenantId", async () => {
   const client = new VoltMemClient({
     baseUrl: "https://voltmem.example.com",
     fetch: (async () => jsonResponse(200, [])) as typeof fetch,
   });
-  await assert.rejects(() => client.getAll(), /userId is required/);
+  await assert.rejects(() => client.getAll(), /tenantId is required/);
 });

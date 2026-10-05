@@ -18,7 +18,7 @@ same priors as [`examples/custom_classifier.py`](../examples/custom_classifier.p
 | **Memory item** | One stored fact. | approve/abort outcome text |
 | **Profile** | Built-in registry and classifier (`VOLTMEM_PROFILE`). Extra kinds come from `VOLTMEM_DOMAINS_FILE`. | `stylens` |
 
-HTTP still addresses a tenant as `/v1/users/{user_id}`. That segment is the tenant id; the word `users` in the path is the compatible spelling. The profile classifier assigns `domain` on write. Full glossary: [docs/SIDECAR.md](../docs/SIDECAR.md#concepts).
+HTTP addresses a tenant as `/v1/tenants/{tenant_id}`. `/v1/users/{tenant_id}/…` is the same handlers, marked deprecated. The profile classifier assigns `domain` on write. Full glossary: [docs/SIDECAR.md](../docs/SIDECAR.md#concepts).
 
 ## Quick start
 
@@ -82,21 +82,21 @@ python -m sidecar
 | Method | Path |
 |---|---|
 | GET | `/health` |
-| POST | `/v1/users/{user_id}/memories` |
-| GET | `/v1/users/{user_id}/memories/search?q=&limit=&min_score=` |
-| GET | `/v1/users/{user_id}/memories` |
-| GET | `/v1/users/{user_id}/graph?include_inactive=` |
-| GET | `/v1/users/{user_id}/memories/{memory_id}` |
+| POST | `/v1/tenants/{tenant_id}/memories` |
+| GET | `/v1/tenants/{tenant_id}/memories/search?q=&limit=&min_score=` |
+| GET | `/v1/tenants/{tenant_id}/memories` |
+| GET | `/v1/tenants/{tenant_id}/graph?include_inactive=` |
+| GET | `/v1/tenants/{tenant_id}/memories/{memory_id}` |
 | GET | `/ui` |
-| DELETE | `/v1/users/{user_id}/memories/{memory_id}` |
-| DELETE | `/v1/users/{user_id}/memories` (clear) |
-| GET | `/v1/users/{user_id}/summary` |
-| GET | `/v1/users/{user_id}/domain_stats` |
-| POST | `/v1/users/{user_id}/events` |
-| GET | `/v1/users/{user_id}/events/{event_id}` |
-| POST | `/v1/users/{user_id}/maintenance/trigger` |
-| POST | `/v1/users/{user_id}/maintenance/rollback` |
-| GET | `/v1/users/{user_id}/maintenance/tasks` |
+| DELETE | `/v1/tenants/{tenant_id}/memories/{memory_id}` |
+| DELETE | `/v1/tenants/{tenant_id}/memories` (clear) |
+| GET | `/v1/tenants/{tenant_id}/summary` |
+| GET | `/v1/tenants/{tenant_id}/domain_stats` |
+| POST | `/v1/tenants/{tenant_id}/events` |
+| GET | `/v1/tenants/{tenant_id}/events/{event_id}` |
+| POST | `/v1/tenants/{tenant_id}/maintenance/trigger` |
+| POST | `/v1/tenants/{tenant_id}/maintenance/rollback` |
+| GET | `/v1/tenants/{tenant_id}/maintenance/tasks` |
 
 ### Maintenance
 
@@ -124,7 +124,7 @@ Grey writes insert as twins until `reconcile_twins` runs (local 14B). Set
 ### Add
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8080/v1/users/alice/memories" \
+curl -s -X POST "http://127.0.0.1:8080/v1/tenants/alice/memories" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $VOLTMEM_API_KEY" \
   -d '{"data":"I prefer darker colors and minimal fits"}'
@@ -137,16 +137,16 @@ Body: `{ "data": <string | message | messages>, "source"?: "...", "extract"?: bo
 ### Search
 
 ```bash
-curl -s "http://127.0.0.1:8080/v1/users/alice/memories/search?q=style%20preferences&limit=5" \
+curl -s "http://127.0.0.1:8080/v1/tenants/alice/memories/search?q=style%20preferences&limit=5" \
   -H "X-API-Key: $VOLTMEM_API_KEY"
 ```
 
 ### Graph
 
-Active and superseded rows for one tenant, plus the edges already stored in SQLite. List and search stay current-truth only. The `{user_id}` segment is that tenant id.
+Active and superseded rows for one tenant, plus the edges already stored in SQLite. List and search stay current-truth only. The `{tenant_id}` segment is that tenant id.
 
 ```bash
-curl -s "http://127.0.0.1:8080/v1/users/relay-local/graph" \
+curl -s "http://127.0.0.1:8080/v1/tenants/relay-local/graph" \
   -H "X-API-Key: $VOLTMEM_API_KEY" | jq '.nodes | length'
 ```
 
@@ -165,7 +165,7 @@ For a laptop-only sidecar, start with `HOST=127.0.0.1` so `/ui` and `/v1` are no
 ### Domain stats (prior calibration)
 
 ```bash
-curl -s "http://127.0.0.1:8080/v1/users/alice/domain_stats" \
+curl -s "http://127.0.0.1:8080/v1/tenants/alice/domain_stats" \
   -H "X-API-Key: $VOLTMEM_API_KEY"
 ```
 
@@ -180,5 +180,5 @@ See [clients/typescript/README.md](../clients/typescript/README.md).
 
 ## Multi-tenant
 
-One process / one SQLite file. `{user_id}` is the tenant id and selects the
-`namespace` column. Tenants never see each other's memories.
+One process / one SQLite file. `{tenant_id}` is the tenant id and selects the
+`namespace` column. Tenants never see each other's memories. `/v1/users/{tenant_id}/…` still reaches the same rows.

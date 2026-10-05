@@ -7,10 +7,10 @@ todos:
     status: completed
   - id: api-tenants-alias
     content: "Sidecar — mount /v1/tenants/{tenant_id}/… as canonical routes (same handlers as users); keep /v1/users/{user_id}/… as deprecated alias; OpenAPI descriptions say tenant"
-    status: pending
+    status: completed
   - id: client-tenantId
     content: "@voltmem/client — prefer tenantId / forTenant(); accept userId as deprecated alias; paths call /v1/tenants/…; bump client minor; changelog"
-    status: pending
+    status: completed
   - id: domain-on-add
     content: "Optional domain on POST …/memories + Memory.add/remember plumbing + TS AddOptions.domain; skip classifier when set; tests for forced domain"
     status: completed
@@ -159,11 +159,11 @@ Track as notes / issue links; implement in consumer repos after client publish:
 ## Success criteria
 
 - [x] Glossary published; UI says Tenant / Domain (kind)
-- [ ] `/v1/tenants/{id}/memories` works; `/v1/users/{id}/…` still works
-- [ ] Client accepts `tenantId`; old `userId` still works
+- [x] `/v1/tenants/{id}/memories` works; `/v1/users/{id}/…` still works
+- [x] Client accepts `tenantId`; old `userId` still works
 - [x] POST memory with `domain` persists that domain
 - [x] `VOLTMEM_DOMAINS_FILE` merges app domains and keyword hints; tests cover load + one write/search
-- [ ] SIDECAR documents profile + tenant rename + domain-on-write
+- [x] SIDECAR documents profile + tenant rename + domain-on-write
 
 ## Suggested order
 

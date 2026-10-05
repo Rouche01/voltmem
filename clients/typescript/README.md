@@ -28,7 +28,7 @@ import { VoltMemClient } from "@voltmem/client";
 const mem = new VoltMemClient({
   baseUrl: env.VOLTMEM_URL,   // e.g. https://voltmem.example.com
   apiKey: env.VOLTMEM_API_KEY,
-  userId: user.id,
+  tenantId: user.id,          // userId is still accepted
 });
 
 await mem.add("I prefer darker colors and minimal fits");
@@ -46,7 +46,7 @@ export default {
     const mem = new VoltMemClient({
       baseUrl: env.VOLTMEM_URL,
       apiKey: env.VOLTMEM_API_KEY,
-      userId: "alice",
+      tenantId: "alice",
     });
     const hits = await mem.search("style preferences");
     return Response.json(hits);
@@ -59,7 +59,7 @@ Keep `VOLTMEM_API_KEY` in Worker secrets — never ship it to the browser.
 ### Multi-tenant
 
 ```ts
-const bob = mem.forUser("bob");
+const bob = mem.forTenant("bob");
 await bob.add("I prefer neon colors");
 ```
 
@@ -68,7 +68,7 @@ await bob.add("I prefer neon colors");
 | Method | Sidecar |
 |---|---|
 | `health()` | `GET /health` |
-| `add(data, opts?)` | `POST /v1/users/{userId}/memories` (`opts.domain` skips classification) |
+| `add(data, opts?)` | `POST /v1/tenants/{tenantId}/memories` (`opts.domain` skips classification) |
 | `search(q, opts?)` | `GET .../memories/search` |
 | `getAll()` | `GET .../memories` |
 | `get(id)` | `GET .../memories/{id}` |

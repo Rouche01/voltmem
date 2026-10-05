@@ -268,7 +268,7 @@ alice = create_memory("app.db", user_id="alice")
 bob   = create_memory("app.db", user_id="bob")
 ```
 
-The HTTP sidecar uses the same id on `/v1/users/{user_id}`. Glossary: [docs/SIDECAR.md](docs/SIDECAR.md#concepts).
+The HTTP sidecar uses the same id on `/v1/tenants/{tenant_id}` (`/v1/users/{tenant_id}` remains as a deprecated alias). Glossary: [docs/SIDECAR.md](docs/SIDECAR.md#concepts).
 
 ### HTTP sidecar / TypeScript
 

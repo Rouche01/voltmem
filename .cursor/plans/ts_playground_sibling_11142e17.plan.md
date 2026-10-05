@@ -7,7 +7,7 @@ todos:
     status: pending
   - id: voltmem-domain-api
     content: Add optional domain to sidecar POST /memories + @voltmem/client AddOptions; handle slot tape replace if needed
-    status: pending
+    status: completed
   - id: scaffold-sibling
     content: "Create ~/Projects/voltmem-playground: wrangler.jsonc, Worker BFF, static UI, file: @voltmem/client"
     status: pending

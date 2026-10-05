@@ -54,46 +54,46 @@ export type DomainStat = {
 
 export type DomainStats = Record<string, DomainStat>;
 
-export type VoltMemClientOptions = {
+/** Per-call or client-level tenant. `tenantId` wins when both are set. */
+export type TenantScope = {
+  /** Isolation boundary: a person or an app bucket. */
+  tenantId?: string;
+  /** @deprecated Use tenantId. Still accepted. */
+  userId?: string;
+};
+
+export type VoltMemClientOptions = TenantScope & {
   /** Sidecar base URL, e.g. `https://voltmem.example.com` (no trailing slash required). */
   baseUrl: string;
   /** Sent as `X-API-Key` when the sidecar has `VOLTMEM_API_KEY` set. */
   apiKey?: string;
-  /** Default tenant for convenience methods. */
-  userId?: string;
   /** Override `globalThis.fetch` (tests / custom runtimes). */
   fetch?: typeof fetch;
 };
 
-export type AddOptions = {
+export type AddOptions = TenantScope & {
   source?: string;
   extract?: boolean;
   /** Fact kind. When set, the sidecar skips the profile classifier. */
   domain?: string;
-  userId?: string;
   event_id?: string;
   modality?: string;
   expires_at?: number;
   ttl_seconds?: number;
 };
 
-export type AddEventOptions = {
+export type AddEventOptions = TenantScope & {
   source?: string;
-  userId?: string;
 };
 
-export type SearchOptions = {
+export type SearchOptions = TenantScope & {
   limit?: number;
   minScore?: number;
-  userId?: string;
 };
 
-export type UserOptions = {
-  userId?: string;
-};
+export type UserOptions = TenantScope;
 
-export type MaintenanceTriggerOptions = {
+export type MaintenanceTriggerOptions = TenantScope & {
   task?: string;
   dry_run?: boolean;
-  userId?: string;
 };

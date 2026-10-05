@@ -44,9 +44,9 @@ You choose who runs the sidecar:
 | **Memory item** | One stored fact. | “I prefer darker colors and minimal fits” |
 | **Profile** | Built-in registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `stylens` |
 
-The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/users/{user_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. The path spelling `users` stays so current clients keep working; a `/v1/tenants/{tenant_id}` alias is planned and `users` will remain as the compatible path.
+The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/tenants/{tenant_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. `/v1/users/{tenant_id}/…` is the same handlers, marked deprecated in OpenAPI, so older clients keep working.
 
-A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write unless the caller sets `domain`. Python `remember(..., domain=…)` and `POST /v1/users/{user_id}/memories` with `{ "domain": "…" }` both skip classification. `POST .../events` already takes `domain` on each facet. The memory browser filter shows that stored kind.
+A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write unless the caller sets `domain`. Python `remember(..., domain=…)` and `POST /v1/tenants/{tenant_id}/memories` with `{ "domain": "…" }` both skip classification. `POST .../events` already takes `domain` on each facet. The memory browser filter shows that stored kind.
 
 Tenant is the database. Domain is a typed partition inside it. Both live in the same SQLite table.
 
@@ -139,7 +139,7 @@ python -m sidecar
 2. **Set `VOLTMEM_API_KEY`** — required in production; `/health` stays open, all `/v1/*` routes require `X-API-Key`.
 3. **TLS + public URL** — put the container behind Fly.io, Railway, Render, Cloud Run, or your reverse proxy; Workers cannot call `localhost` in production.
 4. **Embeddings** — image builds with `.[sidecar,embeddings]`; first start can take a minute while models load.
-5. **Multi-tenant** — pass a stable tenant id per person or app bucket (`alice`, `relay-local`); one sidecar / one DB can serve many tenants. The HTTP segment is still `{user_id}` on `/v1/users/…`.
+5. **Multi-tenant** — pass a stable tenant id per person or app bucket (`alice`, `relay-local`); one sidecar / one DB can serve many tenants. The HTTP segment is `{tenant_id}` on `/v1/tenants/…` (`/v1/users/…` is the deprecated alias).
 
 ### Example: Fly.io
 
@@ -167,7 +167,7 @@ import { VoltMemClient } from "@voltmem/client";
 const mem = new VoltMemClient({
   baseUrl: process.env.VOLTMEM_URL!,      // https://voltmem.example.com
   apiKey: process.env.VOLTMEM_API_KEY!,
-  userId: "alice",                         // tenant id (person or app bucket)
+  tenantId: "alice",                       // person or app bucket; userId still accepted
 });
 
 await mem.add("I prefer darker colors and minimal fits");
@@ -181,7 +181,7 @@ Cloudflare Worker secrets: `VOLTMEM_URL`, `VOLTMEM_API_KEY` — never expose the
 
 ## Memory browser
 
-Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a tenant id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/users/{user_id}/graph` (that segment is the tenant id). `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
+Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a tenant id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/tenants/{tenant_id}/graph`. `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
 
 ---
 
@@ -193,15 +193,15 @@ export KEY=replace-me
 
 curl -s "$BASE/health"
 
-curl -s -X POST "$BASE/v1/users/alice/memories" \
+curl -s -X POST "$BASE/v1/tenants/alice/memories" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $KEY" \
   -d '{"data":"I prefer darker colors and minimal fits"}'
 
-curl -s "$BASE/v1/users/alice/memories/search?q=style%20preferences&limit=3" \
+curl -s "$BASE/v1/tenants/alice/memories/search?q=style%20preferences&limit=3" \
   -H "X-API-Key: $KEY"
 
-curl -s "$BASE/v1/users/relay-local/graph" \
+curl -s "$BASE/v1/tenants/relay-local/graph" \
   -H "X-API-Key: $KEY" | jq '.nodes | length'
 
 # browser: open "$BASE/ui" and paste KEY + tenant id (relay-local, alice, …)
