@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Any, Union
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .auth import require_api_key
@@ -332,6 +334,13 @@ def create_app() -> FastAPI:
                 "default_run_all": True,
             },
         ]
+
+    static_dir = Path(__file__).resolve().parent / "static"
+    app.mount(
+        "/ui",
+        StaticFiles(directory=str(static_dir), html=True),
+        name="ui",
+    )
 
     return app
 

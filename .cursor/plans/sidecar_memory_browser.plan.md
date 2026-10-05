@@ -1,24 +1,24 @@
 ---
 name: Sidecar memory browser + graph UI
-overview: "Ship a same-origin memory browser on the VoltMem sidecar — list + inspect first, then a small graph over supersedes/facet edges — so dogfood tenants (relay-os, stylens) can see what is stored without curling JSON."
+overview: Ship a same-origin memory browser on the VoltMem sidecar — list + inspect first, then a small graph over supersedes/facet edges — so dogfood tenants (relay-os, stylens) can see what is stored without curling JSON.
 todos:
   - id: graph-api
-    content: "Add GET /v1/users/{user_id}/graph — all rows (active + superseded), nodes + supersedes/facet edges; optional include_inactive query; keep list/search active-only"
+    content: Add GET /v1/users/{user_id}/graph — all rows (active + superseded), nodes + supersedes/facet edges; optional include_inactive query; keep list/search active-only
     status: completed
   - id: store-list-all
-    content: "Store/Memory helper to list every row for a namespace (not only superseded_by IS NULL); reuse for graph; thin tests in test_sidecar / store"
+    content: Store/Memory helper to list every row for a namespace (not only superseded_by IS NULL); reuse for graph; thin tests in test_sidecar / store
     status: completed
   - id: static-ui-shell
-    content: "sidecar/static/index.html + FastAPI StaticFiles mount at /ui; sessionStorage for API key + user_id; same-origin fetch to /v1/*"
-    status: pending
+    content: sidecar/static/index.html + FastAPI StaticFiles mount at /ui; sessionStorage for API key + user_id; same-origin fetch to /v1/*
+    status: completed
   - id: list-inspect
-    content: "List pane from GET /memories (or graph nodes filtered active); filter domain/source/text; detail pane from GET /memories/{id} inspect fields"
-    status: pending
+    content: List pane from GET /memories (or graph nodes filtered active); filter domain/source/text; detail pane from GET /memories/{id} inspect fields
+    status: completed
   - id: graph-view
-    content: "Second pane — SVG or vendored Cytoscape; color by domain; fade inactive; edges supersedes + facet only; no all-pairs similarity in v1"
+    content: Second pane — SVG or vendored Cytoscape; color by domain; fade inactive; edges supersedes + facet only; no all-pairs similarity in v1
     status: pending
   - id: docs-smoke
-    content: "Document /ui + /graph in sidecar/README.md and docs/SIDECAR.md; one curl + browser smoke for local Docker"
+    content: Document /ui + /graph in sidecar/README.md and docs/SIDECAR.md; one curl + browser smoke for local Docker
     status: pending
 isProject: true
 ---
@@ -27,7 +27,7 @@ isProject: true
 
 Canonical plan for an **operator / dogfood UI** inside the VoltMem sidecar. Open while the `voltmem` workspace is active.
 
-**Related (do not merge):** public demo walkthrough lives in [`ts_playground_sibling_11142e17.plan.md`](./ts_playground_sibling_11142e17.plan.md) (sibling CF Worker). This plan is the **sidecar-local** inspector for real tenants (`relay-local`, stylens users, etc.).
+**Related (do not merge):** public demo walkthrough lives in `[ts_playground_sibling_11142e17.plan.md](./ts_playground_sibling_11142e17.plan.md)` (sibling CF Worker). This plan is the **sidecar-local** inspector for real tenants (`relay-local`, stylens users, etc.).
 
 ## What this achieves
 
@@ -42,13 +42,15 @@ Not a product dashboard. Not a public playground. Same process, same API key, sa
 
 ## Non-goals
 
-| Out | Why |
-|-----|-----|
-| Embedding / similarity edges in v1 | Not stored; all-pairs on every load is expensive and noisy |
-| Exposing API key via a public Worker | Operator UI only; key stays in browser sessionStorage on localhost / private host |
-| Changing Relay write path | CommunityEngager keeps `add()`; graph fills as supersedes / `add_event` happen |
-| Replacing `/memories` active-only semantics | List/search stay current-truth; graph is the history-aware view |
-| Full SPA build (Vite/React) in v1 | One static HTML (+ optional small vendored JS) keeps the Docker image Python-only |
+
+| Out                                         | Why                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------- |
+| Embedding / similarity edges in v1          | Not stored; all-pairs on every load is expensive and noisy                        |
+| Exposing API key via a public Worker        | Operator UI only; key stays in browser sessionStorage on localhost / private host |
+| Changing Relay write path                   | CommunityEngager keeps `add()`; graph fills as supersedes / `add_event` happen    |
+| Replacing `/memories` active-only semantics | List/search stay current-truth; graph is the history-aware view                   |
+| Full SPA build (Vite/React) in v1           | One static HTML (+ optional small vendored JS) keeps the Docker image Python-only |
+
 
 ## Architecture
 
@@ -65,19 +67,23 @@ flowchart LR
   sidecar -->|"GET /v1/.../memories/id"| inspect[Scoring inspect]
 ```
 
+
+
 - **Same origin** — mount static files from FastAPI; UI calls `/v1/...` without CORS.
-- **Auth** — existing `X-API-Key` on `/v1/*`; `/ui` and `/health` stay open (UI shell only; data still requires the key).
+- **Auth** — existing `X-API-Key` on `/v1/`*; `/ui` and `/health` stay open (UI shell only; data still requires the key).
 - **Tenant** — `{user_id}` path segment (Relay default: `relay-local` via `VOLTMEM_USER_ID`).
 
 ## Data model (edges that matter)
 
-From [`voltmem/domains.py`](../../voltmem/domains.py) `MemoryItem`:
+From `[voltmem/domains.py](../../voltmem/domains.py)` `MemoryItem`:
 
-| Field | Graph meaning |
-|-------|----------------|
-| `superseded_by` | Directed edge old → new (`kind: "supersedes"`) |
-| `event_id` | Clique or star among facets (`kind: "facet"`) |
-| `is_active` / `superseded_by is None` | Active vs replaced (fade replaced nodes) |
+
+| Field                                 | Graph meaning                                  |
+| ------------------------------------- | ---------------------------------------------- |
+| `superseded_by`                       | Directed edge old → new (`kind: "supersedes"`) |
+| `event_id`                            | Clique or star among facets (`kind: "facet"`)  |
+| `is_active` / `superseded_by is None` | Active vs replaced (fade replaced nodes)       |
+
 
 `GET /v1/users/{user_id}/memories` today returns **active only** via `get_all()` → `_layer._active()`. The graph endpoint must include superseded rows or replacement chains never appear.
 
@@ -135,7 +141,7 @@ Edge rules:
 
 Later (not v1): `?similar=0.8` optional pairwise scores — only if measured and capped.
 
-Tests: extend [`tests/test_sidecar.py`](../../tests/test_sidecar.py) — insert A, supersede with B, assert B active in `/memories`, both in `/graph`, one supersedes edge.
+Tests: extend `[tests/test_sidecar.py](../../tests/test_sidecar.py)` — insert A, supersede with B, assert B active in `/memories`, both in `/graph`, one supersedes edge.
 
 ## Phase 2 — Static UI shell
 
@@ -152,15 +158,17 @@ sidecar/
 - Prompt once for API key + user id; store in `sessionStorage`
 - No npm build step in the VoltMem image
 
-Wire in [`sidecar/app.py`](../../sidecar/app.py) with `StaticFiles` (or a single `FileResponse` for `/ui` → `index.html`). Prefer `/ui/` trailing-slash friendly mount.
+Wire in `[sidecar/app.py](../../sidecar/app.py)` with `StaticFiles` (or a single `FileResponse` for `/ui` → `index.html`). Prefer `/ui/` trailing-slash friendly mount.
 
 ## Phase 3 — List + inspect
 
-| Pane | Source |
-|------|--------|
-| Table / cards | `GET .../memories` or active filter on graph nodes |
-| Filters | domain, source substring, text substring |
-| Detail | `GET .../memories/{id}` — volatility, protection, staleness, surprise, mismatch, age ([`inspect`](../../voltmem/memory.py)) |
+
+| Pane          | Source                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Table / cards | `GET .../memories` or active filter on graph nodes                                                                          |
+| Filters       | domain, source substring, text substring                                                                                    |
+| Detail        | `GET .../memories/{id}` — volatility, protection, staleness, surprise, mismatch, age (`[inspect](../../voltmem/memory.py)`) |
+
 
 Actions (optional v1.1, mark pending if timeboxed): delete one memory (existing DELETE). Do not ship clear-all in the UI without a typed confirm.
 
@@ -179,8 +187,8 @@ Implementation preference: plain SVG + simple force (or vendored Cytoscape under
 
 Update:
 
-- [`sidecar/README.md`](../../sidecar/README.md) — API table row for `/graph`; “Memory browser” section (`/ui`)
-- [`docs/SIDECAR.md`](../../docs/SIDECAR.md) — one paragraph for operators
+- `[sidecar/README.md](../../sidecar/README.md)` — API table row for `/graph`; “Memory browser” section (`/ui`)
+- `[docs/SIDECAR.md](../../docs/SIDECAR.md)` — one paragraph for operators
 
 Local smoke:
 
@@ -193,11 +201,13 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 
 ## Dogfood consumers
 
-| Consumer | `user_id` | Expectation |
-|----------|-----------|-------------|
-| relay-os CommunityEngager | `VOLTMEM_USER_ID` (e.g. `relay-local`) | List fills from learn/approve/abort/discovery facts; few edges until supersedes |
-| stylens / other | their tenant ids | Same UI |
-| ThinkPad `/opt/voltmem` | bind localhost only | UI on `127.0.0.1:8080/ui` — do not expose `/ui` or API on public interfaces without auth/network policy |
+
+| Consumer                  | `user_id`                              | Expectation                                                                                             |
+| ------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| relay-os CommunityEngager | `VOLTMEM_USER_ID` (e.g. `relay-local`) | List fills from learn/approve/abort/discovery facts; few edges until supersedes                         |
+| stylens / other           | their tenant ids                       | Same UI                                                                                                 |
+| ThinkPad `/opt/voltmem`   | bind localhost only                    | UI on `127.0.0.1:8080/ui` — do not expose `/ui` or API on public interfaces without auth/network policy |
+
 
 ## Complexity checklist
 
@@ -209,7 +219,7 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 ## Success criteria
 
 - [x] `/graph` returns active + superseded nodes and supersedes/facet edges; tests green
-- [ ] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
+- [x] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
 - [ ] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [ ] SIDECAR + sidecar README document how to open the browser
 
@@ -223,4 +233,5 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 ## Handoff notes
 
 - Public marketing demo remains the **sibling playground** plan — different threat model (BFF hides key).
-- Associative / co-occurrence graphs from sleeptime ([`docs/SCHEDULE.md`](../../docs/SCHEDULE.md) P3) are a future edge `kind`, not a blocker for this UI.
+- Associative / co-occurrence graphs from sleeptime (`[docs/SCHEDULE.md](../../docs/SCHEDULE.md)` P3) are a future edge `kind`, not a blocker for this UI.
+

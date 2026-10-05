@@ -329,6 +329,39 @@ def test_graph_facet_edges_are_a_star():
         assert {row["id"] for row in listed} == set(ids)
 
 
+def test_ui_shell_is_open_and_has_list_inspect():
+    previous = os.environ.get("VOLTMEM_API_KEY")
+    try:
+        with _client(
+            VOLTMEM_DB_PATH=":memory:",
+            VOLTMEM_API_KEY="test-secret",
+        ) as client:
+            bare = client.get("/ui", follow_redirects=False)
+            assert bare.status_code in (307, 308)
+            assert bare.headers["location"].endswith("/ui/")
+
+            page = client.get("/ui/")
+            assert page.status_code == 200, page.text
+            assert "text/html" in page.headers["content-type"]
+            body = page.text
+            assert 'id="memory-browser"' in body
+            assert "sessionStorage" in body
+            assert "/v1/users/" in body
+            assert "filter-text" in body
+            assert "filter-domain" in body
+            assert "filter-source" in body
+            assert "effective_volatility" in body
+            assert "protection_weight" in body
+            assert client.get("/health").status_code == 200
+            denied = client.get("/v1/users/alice/memories")
+            assert denied.status_code == 401
+    finally:
+        if previous is None:
+            os.environ.pop("VOLTMEM_API_KEY", None)
+        else:
+            os.environ["VOLTMEM_API_KEY"] = previous
+
+
 if __name__ == "__main__":
     tests = [
         test_health,
@@ -341,6 +374,7 @@ if __name__ == "__main__":
         test_store_list_all_includes_superseded_rows,
         test_graph_supersedes_keeps_list_active_only,
         test_graph_facet_edges_are_a_star,
+        test_ui_shell_is_open_and_has_list_inspect,
     ]
     failed = 0
     for fn in tests:

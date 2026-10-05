@@ -44,3 +44,6 @@ Issues = "https://github.com/Rouche01/voltmem/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["voltmem*", "sidecar*"]
+
+[tool.setuptools.package-data]
+sidecar = ["static/*"]

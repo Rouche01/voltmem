@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoltMem memory browser</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3efe6;
+      --panel: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5e574c;
+      --line: #ddd4c6;
+      --accent: #0f3d3e;
+      --accent-soft: #e5f1f0;
+      --danger: #8c2f2f;
+      --shadow: 0 1px 0 rgba(28, 25, 21, 0.04);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 ui-sans-serif, "Segoe UI", sans-serif;
+    }
+
+    header, main {
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 16px 24px;
+      padding: 24px 0 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      letter-spacing: -0.02em;
+    }
+
+    h1 span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    #connect {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 12px;
+      align-items: end;
+      margin-left: auto;
+    }
+
+    label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    input, select, button {
+      font: inherit;
+      color: var(--ink);
+    }
+
+    input, select {
+      min-width: 12rem;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    button {
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #f7fffe;
+      cursor: pointer;
+    }
+
+    button:focus-visible, input:focus-visible, select:focus-visible, .row:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    #status {
+      width: 100%;
+      min-height: 1.2em;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #status.is-error { color: var(--danger); }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 12px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+
+    .toolbar button {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 16px;
+      padding-bottom: 32px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      min-height: 420px;
+      padding: 12px;
+    }
+
+    #list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .row {
+      width: 100%;
+      display: grid;
+      gap: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .row.is-selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .row .memory {
+      font-size: 0.98rem;
+    }
+
+    .row .meta, .empty, .secondary {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    #detail h2 {
+      margin: 4px 0 12px;
+      font-size: 1.15rem;
+      line-height: 1.35;
+    }
+
+    #scores {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    #scores div {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--bg);
+    }
+
+    #scores dt {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    #scores dd {
+      margin: 2px 0 0;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 800px) {
+      header, main { width: min(1100px, calc(100% - 20px)); }
+      #connect { margin-left: 0; }
+      input, select { min-width: 0; width: 100%; }
+      .workspace { grid-template-columns: 1fr; }
+      .panel { min-height: 0; }
+    }
+  </style>
+</head>
+<body id="memory-browser">
+  <header>
+    <h1>VoltMem <span>Memory browser</span></h1>
+    <form id="connect">
+      <label>API key
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false">
+      </label>
+      <label>User id
+        <input id="user-id" type="text" required placeholder="relay-local" autocomplete="off">
+      </label>
+      <button type="submit">Connect</button>
+    </form>
+    <p id="status" role="status"></p>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>Text
+        <input id="filter-text" type="search" placeholder="Substring">
+      </label>
+      <label>Domain
+        <select id="filter-domain">
+          <option value="">All domains</option>
+        </select>
+      </label>
+      <label>Source
+        <input id="filter-source" type="search" placeholder="Substring">
+      </label>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <div class="workspace">
+      <section class="panel" aria-label="Memories">
+        <ul id="list"></ul>
+      </section>
+      <section class="panel" id="detail" aria-live="polite">
+        <p class="empty">Select a memory to inspect scoring.</p>
+      </section>
+    </div>
+  </main>
+  <script>
+    const STORAGE_KEY = "voltmem.browser";
+    const scoreFields = [
+      ["Volatility", "effective_volatility"],
+      ["Protection", "protection_weight"],
+      ["Staleness", "staleness"],
+      ["Surprise", "surprise_ema"],
+      ["Mismatch", "expected_mismatch"],
+      ["Age (days)", "age_days"],
+    ];
+
+    const statusEl = document.getElementById("status");
+    const listEl = document.getElementById("list");
+    const detailEl = document.getElementById("detail");
+    const domainEl = document.getElementById("filter-domain");
+    const textEl = document.getElementById("filter-text");
+    const sourceEl = document.getElementById("filter-source");
+
+    let session = { apiKey: "", userId: "" };
+    let memories = [];
+    let selectedId = "";
+    let loadError = "";
+
+    function setStatus(message, isError) {
+      statusEl.textContent = message || "";
+      statusEl.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function loadSession() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed.userId !== "string") return null;
+        return {
+          apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
+          userId: parsed.userId,
+        };
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function saveSession() {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    }
+
+    async function api(path) {
+      const headers = {};
+      if (session.apiKey) headers["X-API-Key"] = session.apiKey;
+      const response = await fetch(path, { headers });
+      if (response.status === 401) {
+        throw new Error("API key was rejected.");
+      }
+      if (!response.ok) {
+        throw new Error("Request failed (" + response.status + ").");
+      }
+      return response.json();
+    }
+
+    function userPath() {
+      return "/v1/users/" + encodeURIComponent(session.userId);
+    }
+
+    function matches(item) {
+      const text = textEl.value.trim().toLowerCase();
+      const source = sourceEl.value.trim().toLowerCase();
+      const domain = domainEl.value;
+      if (domain && item.domain !== domain) return false;
+      if (source && !String(item.source || "").toLowerCase().includes(source)) return false;
+      if (text && !String(item.memory || "").toLowerCase().includes(text)) return false;
+      return true;
+    }
+
+    function fillDomains() {
+      const current = domainEl.value;
+      const domains = Array.from(new Set(memories.map((item) => item.domain))).sort();
+      domainEl.replaceChildren(new Option("All domains", ""));
+      for (const domain of domains) domainEl.append(new Option(domain, domain));
+      domainEl.value = domains.includes(current) ? current : "";
+    }
+
+    function renderList() {
+      const shown = memories.filter(matches);
+      listEl.replaceChildren();
+      if (!session.userId) {
+        listEl.append(emptyItem("Connect with a user id to load memories."));
+        return;
+      }
+      if (loadError) {
+        listEl.append(emptyItem(loadError));
+        return;
+      }
+      if (!memories.length) {
+        listEl.append(emptyItem("No active memories for this user."));
+        return;
+      }
+      if (!shown.length) {
+        listEl.append(emptyItem("No memories match these filters."));
+        return;
+      }
+      for (const item of shown) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "row" + (item.id === selectedId ? " is-selected" : "");
+        button.setAttribute("aria-pressed", item.id === selectedId ? "true" : "false");
+        const memory = document.createElement("span");
+        memory.className = "memory";
+        memory.textContent = item.memory || "";
+        const meta = document.createElement("span");
+        meta.className = "meta";
+        meta.textContent = (item.domain || "unknown") + " · " + (item.source || "unknown");
+        button.append(memory, meta);
+        button.addEventListener("click", () => selectMemory(item.id));
+        const li = document.createElement("li");
+        li.append(button);
+        listEl.append(li);
+      }
+    }
+
+    function emptyItem(message) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = message;
+      return li;
+    }
+
+    function formatNumber(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "—";
+      return String(Math.round(value * 10000) / 10000);
+    }
+
+    function renderDetail(info) {
+      detailEl.replaceChildren();
+      const title = document.createElement("h2");
+      title.textContent = info.content || "";
+      const scores = document.createElement("dl");
+      scores.id = "scores";
+      for (const [label, key] of scoreFields) {
+        const wrap = document.createElement("div");
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        const dd = document.createElement("dd");
+        dd.textContent = formatNumber(info[key]);
+        wrap.append(dt, dd);
+        scores.append(wrap);
+      }
+      const extra = document.createElement("p");
+      extra.className = "secondary";
+      const active = info.active ? "active" : "inactive";
+      extra.textContent = [
+        info.domain || "unknown domain",
+        info.source || "unknown source",
+        active,
+        "repetitions " + (info.repetition_count ?? "—"),
+        "mismatch count " + (info.mismatch_count ?? "—"),
+        "mismatch sigma " + formatNumber(info.mismatch_sigma),
+        "days since confirmed " + formatNumber(info.days_since_confirmed),
+      ].join(" · ");
+      detailEl.append(title, scores, extra);
+    }
+
+    async function selectMemory(id) {
+      selectedId = id;
+      renderList();
+      setStatus("Loading inspect…");
+      try {
+        const info = await api(userPath() + "/memories/" + encodeURIComponent(id));
+        renderDetail(info);
+        setStatus("");
+      } catch (err) {
+        detailEl.replaceChildren();
+        const note = document.createElement("p");
+        note.className = "empty";
+        note.textContent = err.message || "Could not load this memory.";
+        detailEl.append(note);
+        setStatus(note.textContent, true);
+      }
+    }
+
+    async function loadMemories() {
+      if (!session.userId) {
+        memories = [];
+        renderList();
+        setStatus("Enter a user id.", true);
+        return;
+      }
+      setStatus("Loading memories…");
+      loadError = "";
+      try {
+        memories = await api(userPath() + "/memories");
+        if (!Array.isArray(memories)) memories = [];
+        fillDomains();
+        renderList();
+        setStatus(memories.length + " active " + (memories.length === 1 ? "memory" : "memories"));
+        if (selectedId && memories.some((item) => item.id === selectedId)) {
+          await selectMemory(selectedId);
+        } else if (selectedId) {
+          selectedId = "";
+          detailEl.replaceChildren();
+          const note = document.createElement("p");
+          note.className = "empty";
+          note.textContent = "Select a memory to inspect scoring.";
+          detailEl.append(note);
+        }
+      } catch (err) {
+        memories = [];
+        loadError = err.message || "Could not load memories.";
+        renderList();
+        setStatus(loadError, true);
+      }
+    }
+
+    document.getElementById("connect").addEventListener("submit", (event) => {
+      event.preventDefault();
+      session = {
+        apiKey: document.getElementById("api-key").value,
+        userId: document.getElementById("user-id").value.trim(),
+      };
+      saveSession();
+      selectedId = "";
+      loadMemories();
+    });
+
+    document.getElementById("refresh").addEventListener("click", () => loadMemories());
+    textEl.addEventListener("input", renderList);
+    sourceEl.addEventListener("input", renderList);
+    domainEl.addEventListener("change", renderList);
+
+    const stored = loadSession();
+    if (stored) {
+      session = stored;
+      document.getElementById("api-key").value = session.apiKey;
+      document.getElementById("user-id").value = session.userId;
+      loadMemories();
+    } else {
+      renderList();
+      setStatus("Enter an API key and user id. The key stays in this tab.");
+    }
+  </script>
+</body>
+</html>
