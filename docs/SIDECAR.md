@@ -35,6 +35,23 @@ You choose who runs the sidecar:
 
 ---
 
+## Concepts
+
+| Concept | Role | Example |
+|---|---|---|
+| **Tenant** | Isolation boundary: one logical database inside the shared SQLite file. A person or an app bucket. | `alice`, `relay-local` |
+| **Domain** | Fact kind plus a volatility prior. A partition inside a tenant. | `style_preference` |
+| **Memory item** | One stored fact. | “I prefer darker colors and minimal fits” |
+| **Profile** | Domain registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `stylens` |
+
+The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/users/{user_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. The path spelling `users` stays so current clients keep working; a `/v1/tenants/{tenant_id}` alias is planned and `users` will remain as the compatible path.
+
+A domain is a column on the memory row, with its volatility prior coming from the profile. The profile classifier assigns the kind on write. Python `remember(..., domain=…)` can set the kind directly and skip classification. The sidecar HTTP add body does not forward `domain` yet, so the browser filter shows classifier output.
+
+Tenant is the database. Domain is a typed partition inside it. Both live in the same SQLite table.
+
+---
+
 ## Option A — Pull a published image (recommended)
 
 When releases publish to GitHub Container Registry:
@@ -103,7 +120,7 @@ python -m sidecar
 2. **Set `VOLTMEM_API_KEY`** — required in production; `/health` stays open, all `/v1/*` routes require `X-API-Key`.
 3. **TLS + public URL** — put the container behind Fly.io, Railway, Render, Cloud Run, or your reverse proxy; Workers cannot call `localhost` in production.
 4. **Embeddings** — image builds with `.[sidecar,embeddings]`; first start can take a minute while models load.
-5. **Multi-tenant** — pass a stable `user_id` per end-user; one sidecar / one DB can serve many tenants.
+5. **Multi-tenant** — pass a stable tenant id per person or app bucket (`alice`, `relay-local`); one sidecar / one DB can serve many tenants. The HTTP segment is still `{user_id}` on `/v1/users/…`.
 
 ### Example: Fly.io
 
@@ -131,7 +148,7 @@ import { VoltMemClient } from "@voltmem/client";
 const mem = new VoltMemClient({
   baseUrl: process.env.VOLTMEM_URL!,      // https://voltmem.example.com
   apiKey: process.env.VOLTMEM_API_KEY!,
-  userId: "alice",
+  userId: "alice",                         // tenant id (person or app bucket)
 });
 
 await mem.add("I prefer darker colors and minimal fits");
@@ -145,7 +162,7 @@ Cloudflare Worker secrets: `VOLTMEM_URL`, `VOLTMEM_API_KEY` — never expose the
 
 ## Memory browser
 
-Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a user id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/users/{user_id}/graph`. `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
+Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a tenant id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/users/{user_id}/graph` (that segment is the tenant id). `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
 
 ---
 
@@ -168,7 +185,7 @@ curl -s "$BASE/v1/users/alice/memories/search?q=style%20preferences&limit=3" \
 curl -s "$BASE/v1/users/relay-local/graph" \
   -H "X-API-Key: $KEY" | jq '.nodes | length'
 
-# browser: open "$BASE/ui" and paste KEY + user id
+# browser: open "$BASE/ui" and paste KEY + tenant id (relay-local, alice, …)
 ```
 
 Full route table: [sidecar/README.md](../sidecar/README.md).

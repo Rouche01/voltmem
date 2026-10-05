@@ -9,6 +9,17 @@ or [`@voltmem/client`](../clients/typescript).
 Default domain profile: **stylens** (stable style prefs vs volatile occasion) —
 same priors as [`examples/custom_classifier.py`](../examples/custom_classifier.py).
 
+## Concepts
+
+| Concept | Role | Example |
+|---|---|---|
+| **Tenant** | Isolation boundary (person or app bucket). Stored as SQLite `namespace`. | `relay-local`, `alice` |
+| **Domain** | Fact kind plus a volatility prior, inside one tenant. | `style_preference` |
+| **Memory item** | One stored fact. | approve/abort outcome text |
+| **Profile** | Process-wide registry and classifier (`VOLTMEM_PROFILE`). | `stylens` |
+
+HTTP still addresses a tenant as `/v1/users/{user_id}`. That segment is the tenant id; the word `users` in the path is the compatible spelling. The profile classifier assigns `domain` on write. Full glossary: [docs/SIDECAR.md](../docs/SIDECAR.md#concepts).
+
 ## Quick start
 
 ### Docker (anyone)
@@ -52,7 +63,7 @@ python -m sidecar
 | `VOLTMEM_PROFILE` | `stylens` | Domain registry + classifier profile |
 | `VOLTMEM_MAINTENANCE` | `1` | Background daemon for due tasks (`0` to disable) |
 | `VOLTMEM_MAINTENANCE_CHECK_INTERVAL` | `60` | Seconds between daemon ticks |
-| `VOLTMEM_EXPIRE_INTERVAL` | `3600` | Min seconds between `expire_cleanup` per user |
+| `VOLTMEM_EXPIRE_INTERVAL` | `3600` | Min seconds between `expire_cleanup` per tenant |
 | `VOLTMEM_PATTERN_AUDIT_INTERVAL` | `3600` | Min seconds between `pattern_audit` |
 | `VOLTMEM_RECLASSIFY_INTERVAL` | `86400` | Min seconds between `reclassify_ambiguous` |
 | `VOLTMEM_CONSOLIDATE` | `1` | Include consolidate in the daemon (`0` to disable) |
@@ -129,7 +140,7 @@ curl -s "http://127.0.0.1:8080/v1/users/alice/memories/search?q=style%20preferen
 
 ### Graph
 
-Active and superseded rows for one user, plus the edges already stored in SQLite. List and search stay current-truth only.
+Active and superseded rows for one tenant, plus the edges already stored in SQLite. List and search stay current-truth only. The `{user_id}` segment is that tenant id.
 
 ```bash
 curl -s "http://127.0.0.1:8080/v1/users/relay-local/graph" \
@@ -144,7 +155,7 @@ Each replaced row emits one `supersedes` edge to `superseded_by`. Memories that 
 
 Open [http://127.0.0.1:8080/ui](http://127.0.0.1:8080/ui) while the sidecar is running (Docker or `python -m sidecar`). Paste the same `VOLTMEM_API_KEY` you started the process with, and the tenant id (`relay-local` for Relay). Both stay in this tab’s `sessionStorage`. Leave the key blank when the sidecar was started without `VOLTMEM_API_KEY`.
 
-**List** is `GET .../memories`, with text, domain, and source filters. A row opens `GET .../memories/{id}` (volatility, protection, staleness, surprise, mismatch, age). **Graph** draws the `/graph` payload in the page: color by domain, faded replaced nodes, solid replacement lines, dashed shared-event lines. Memories with no links still show, grouped by domain.
+**List** is `GET .../memories`, with text, domain (kind), and source filters. Domain is the fact kind the profile classifier stored. A row opens `GET .../memories/{id}` (volatility, protection, staleness, surprise, mismatch, age). **Graph** draws the `/graph` payload in the page: color by domain, faded replaced nodes, solid replacement lines, dashed shared-event lines. Memories with no links still show, grouped by domain.
 
 For a laptop-only sidecar, start with `HOST=127.0.0.1` so `/ui` and `/v1` are not on other interfaces.
 
@@ -166,5 +177,5 @@ See [clients/typescript/README.md](../clients/typescript/README.md).
 
 ## Multi-tenant
 
-One process / one SQLite file; `{user_id}` selects the namespace. Tenants never
-see each other's memories.
+One process / one SQLite file. `{user_id}` is the tenant id and selects the
+`namespace` column. Tenants never see each other's memories.

@@ -110,6 +110,13 @@
 
     #status.is-error { color: var(--danger); }
 
+    .hint {
+      width: 100%;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
     .toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -261,8 +268,8 @@
       <label>API key
         <input id="api-key" type="password" autocomplete="off" spellcheck="false">
       </label>
-      <label>User id
-        <input id="user-id" type="text" required placeholder="relay-local" autocomplete="off">
+      <label>Tenant
+        <input id="user-id" type="text" required placeholder="relay-local" autocomplete="off" title="Isolation boundary, such as relay-local or alice">
       </label>
       <button type="submit">Connect</button>
     </form>
@@ -273,9 +280,9 @@
       <label>Text
         <input id="filter-text" type="search" placeholder="Substring">
       </label>
-      <label>Domain
-        <select id="filter-domain">
-          <option value="">All domains</option>
+      <label>Domain (kind)
+        <select id="filter-domain" title="Fact kind from the profile classifier, or the domain supplied on write">
+          <option value="">All kinds</option>
         </select>
       </label>
       <label>Source
@@ -287,6 +294,7 @@
         <button id="view-graph" type="button" aria-pressed="false">Graph</button>
       </div>
     </div>
+    <p class="hint">Domain is the fact kind: profile classifier, or supplied on write.</p>
     <div class="workspace">
       <section class="panel" id="browser-pane" aria-label="Memories">
         <ul id="list"></ul>
@@ -387,7 +395,7 @@
       const current = domainEl.value;
       const source = graph.nodes.length ? graph.nodes : memories;
       const domains = Array.from(new Set(source.map((item) => item.domain).filter(Boolean))).sort();
-      domainEl.replaceChildren(new Option("All domains", ""));
+      domainEl.replaceChildren(new Option("All kinds", ""));
       for (const domain of domains) domainEl.append(new Option(domain, domain));
       domainEl.value = domains.includes(current) ? current : "";
     }
@@ -475,7 +483,7 @@
       graphEl.replaceChildren();
       const shown = (graph.nodes || []).filter(matches);
       if (!session.userId) {
-        legendEl.textContent = "Connect with a user id to load the graph.";
+        legendEl.textContent = "Connect with a tenant to load the graph.";
         return;
       }
       if (loadError) {
@@ -483,7 +491,7 @@
         return;
       }
       if (!(graph.nodes || []).length) {
-        legendEl.textContent = "No memories to draw for this user.";
+        legendEl.textContent = "No memories to draw for this tenant.";
         return;
       }
       if (!shown.length) {
@@ -545,7 +553,7 @@
         graphEl.append(group);
       }
       const kinds = new Set(links.map((edge) => edge.kind));
-      const parts = ["Color is domain."];
+      const parts = ["Color is domain (kind)."];
       if (placed.some((node) => !node.active)) parts.push("Faded nodes are replaced.");
       if (kinds.has("supersedes")) parts.push("Solid line replaces.");
       if (kinds.has("facet")) parts.push("Dashed line shares an event.");
@@ -567,7 +575,7 @@
       const shown = memories.filter(matches);
       listEl.replaceChildren();
       if (!session.userId) {
-        listEl.append(emptyItem("Connect with a user id to load memories."));
+        listEl.append(emptyItem("Connect with a tenant to load memories."));
         return;
       }
       if (loadError) {
@@ -575,7 +583,7 @@
         return;
       }
       if (!memories.length) {
-        listEl.append(emptyItem("No active memories for this user."));
+        listEl.append(emptyItem("No active memories for this tenant."));
         return;
       }
       if (!shown.length) {
@@ -666,7 +674,7 @@
         memories = [];
         graph = { nodes: [], edges: [] };
         renderView();
-        setStatus("Enter a user id.", true);
+        setStatus("Enter a tenant.", true);
         return;
       }
       setStatus("Loading memories…");
@@ -738,7 +746,7 @@
       loadMemories();
     } else {
       renderView();
-      setStatus("Enter an API key and user id. The key stays in this tab.");
+      setStatus("Enter an API key and tenant. The key stays in this tab.");
     }
   </script>
 </body>

@@ -261,12 +261,14 @@ memory.save_context({"input": "I moved to Paris"}, {"output": "Noted."})
 
 ### Multi-tenant
 
-One SQLite file, many users — `user_id` maps to an isolated namespace:
+One SQLite file, many tenants. `user_id` is the tenant id — a person (`alice`) or an app bucket (`relay-local`) — and is stored as the `namespace` column:
 
 ```python
 alice = create_memory("app.db", user_id="alice")
 bob   = create_memory("app.db", user_id="bob")
 ```
+
+The HTTP sidecar uses the same id on `/v1/users/{user_id}`. Glossary: [docs/SIDECAR.md](docs/SIDECAR.md#concepts).
 
 ### HTTP sidecar / TypeScript
 
@@ -303,7 +305,7 @@ API reference: [sidecar/README.md](sidecar/README.md) · TypeScript SDK: [client
 | `experiments/retrieval_plateau_probe.py` | Synthetic Problem 3 plateau / clear-gap check |
 | `experiments/calibrate_escalation.py` | Print E_t vs θ table for tuning explicit-override constants |
 | `examples/quickstart_batteries.py` | `remember()` / `recall()` low-level API |
-| `examples/multi_tenant.py` | One DB, many users |
+| `examples/multi_tenant.py` | One DB, many tenants |
 | `examples/langchain_agent.py` | LangChain adapter |
 | `examples/chat_app/` | Memory-aware CLI chat (extendable to web UI) |
 | `examples/custom_classifier.py` | Pluggable ``KeywordClassifier`` + ``DomainRegistry`` |
