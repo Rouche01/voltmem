@@ -1,6 +1,6 @@
 # VoltMem
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://pypi.org/project/voltmem/)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](https://pypi.org/project/voltmem/)
 [![Python](https://img.shields.io/pypi/pyversions/voltmem)](https://pypi.org/project/voltmem/)
 [![License: MIT](https://img.shields.io/pypi/l/voltmem)](https://github.com/Rouche01/voltmem/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21962419.svg)](https://doi.org/10.5281/zenodo.21962419)
@@ -18,6 +18,14 @@ volatile memories rank lower at search time.
 > Mem0 remembers relevant facts. VoltMem remembers **current truth**.
 
 **Research & benchmarks:** [docs/RESEARCH.md](docs/RESEARCH.md) · **Known limits & roadmap:** [docs/OPEN_PROBLEMS.md](docs/OPEN_PROBLEMS.md) · **Sleeptime roadmap:** [docs/SCHEDULE.md](docs/SCHEDULE.md) · **Control-law spec (Lean):** [lean/README.md](lean/README.md) · **Related FEP research (sibling):** [docs/RELATED.md](docs/RELATED.md)
+
+### What’s new in 0.5.0
+
+- **Domain-scoped clear** — `Memory.clear(domain="…")` and
+  `DELETE /v1/tenants/{id}/memories?domain=…` remove one kind without wiping the
+  tenant; omit `domain` for a full clear
+- **Memory browser** — graph zoom/pan, tooltips, collision layout, list
+  pagination, Clear tenant / Clear domain with typed confirm
 
 ### What’s new in 0.4.0
 
