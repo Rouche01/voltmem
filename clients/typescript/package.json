@@ -1,6 +1,6 @@
 {
   "name": "@voltmem/client",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Workers-safe TypeScript client for the VoltMem HTTP sidecar",
   "type": "module",
   "license": "MIT",

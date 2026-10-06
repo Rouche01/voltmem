@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- Same as 0.6.0 (`clear({ domain })`); republish after `main` was pushed first.
+
 ## 0.6.1
 
 - Same as 0.6.0 (`clear({ domain })`); republish after tagging from `main`.
