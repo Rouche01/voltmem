@@ -61,6 +61,8 @@ There is no pytest runner. Each test file is a script. CI is `.github/workflows/
 
 ## Releases
 
+Agent runbook: `.cursor/skills/voltmem-release/SKILL.md` (selective or all-surface release).
+
 Three version lines, three tags. Bump the version file, commit to `main`, then push the matching tag:
 
 | Surface | Version file | Tag | Workflow |
