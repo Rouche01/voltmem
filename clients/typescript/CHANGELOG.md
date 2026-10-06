@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- Same as 0.6.0 (`clear({ domain })`); republish after tagging from `main`.
+
 ## 0.6.0
 
 - `clear({ domain })` deletes one domain only; `clear()` still clears the whole tenant.
