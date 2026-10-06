@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- `clear({ domain })` deletes one domain only; `clear()` still clears the whole tenant.
+
 ## 0.5.0
 
 - Requests go to `/v1/tenants/{tenantId}/…`.
