@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: dogfood-handoff
     content: "Note for relay-os / stylens — VOLTMEM_TENANT_ID (+ USER_ID fallback), forward domain from context-engine, ship a domains JSON via VOLTMEM_DOMAINS_FILE (separate consumer PRs)"
-    status: pending
+    status: completed
 isProject: true
 ---
 
@@ -146,6 +146,8 @@ Track as notes / issue links; implement in consumer repos after client publish:
 | relay-os `@relay/context-engine` | Prefer `tenantId`; env `VOLTMEM_TENANT_ID` with `VOLTMEM_USER_ID` fallback; pass `domain` through to client `add` (stop relying on text prefix alone, or keep prefix as prompt sugar) |
 | community-engager | Map `preference` → `community_preference`, `outcome` → `community_outcome` in the domains file |
 | Deploy | `VOLTMEM_DOMAINS_FILE` pointing at Relay's JSON on the sidecar Community Engager uses |
+
+Landed in relay-os: `@relay/context-engine` resolves `VOLTMEM_TENANT_ID` (then `VOLTMEM_USER_ID`) and forwards `domain` on `add`. Community Engager maps `preference` / `rules` / `outcome` onto `apps/community-engager/voltmem-domains.json`. Deploy notes mount that file into the sidecar. stylens-lite-api already passes a per-person id as `userId`, which `@voltmem/client` 0.5 still accepts, and it keeps the built-in stylens profile.
 
 ## Non-goals
 
