@@ -59,6 +59,18 @@ There is no pytest runner. Each test file is a script. CI is `.github/workflows/
 
 `experiments/` scripts that call OpenAI, Mem0, or a local 14B model are opt-in. Do not run them as a substitute for the core suite.
 
+## Releases
+
+Three version lines, three tags. Bump the version file, commit to `main`, then push the matching tag:
+
+| Surface | Version file | Tag | Workflow |
+|---|---|---|---|
+| Python `voltmem` | `pyproject.toml` | `vX.Y.Z` | `.github/workflows/publish-pypi.yml` |
+| `@voltmem/client` | `clients/typescript/package.json` | `client-vX.Y.Z` | `.github/workflows/publish-npm.yml` |
+| Sidecar images | tag only | `sidecar-vX.Y.Z` | `.github/workflows/publish-sidecar.yml` |
+
+PyPI and npm use OIDC trusted publishing (`environment: release`). Configure the PyPI trusted publisher for workflow `publish-pypi.yml` and environment `release` before the first `v*` tag publish. Sidecar pushes to GHCR (`:X.Y.Z` / `:latest` and `:X.Y.Z-slim` / `:slim`).
+
 ## Invariants
 
 - **Core stays dependency-free.** `sentence-transformers`, FastAPI, LangChain, and httpx live in extras in `pyproject.toml`. Do not add them to `[project].dependencies`.
