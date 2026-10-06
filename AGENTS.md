@@ -69,7 +69,26 @@ Three version lines, three tags. Bump the version file, commit to `main`, then p
 | `@voltmem/client` | `clients/typescript/package.json` | `client-vX.Y.Z` | `.github/workflows/publish-npm.yml` |
 | Sidecar images | tag only | `sidecar-vX.Y.Z` | `.github/workflows/publish-sidecar.yml` |
 
-PyPI and npm use OIDC trusted publishing (`environment: release`). Configure the PyPI trusted publisher for workflow `publish-pypi.yml` and environment `release` before the first `v*` tag publish. Sidecar pushes to GHCR (`:X.Y.Z` / `:latest` and `:X.Y.Z-slim` / `:slim`).
+PyPI and npm use OIDC trusted publishing (`environment: release`). No `TWINE_PASSWORD` / `NPM_TOKEN` secrets. Sidecar pushes to GHCR (`:X.Y.Z` / `:latest` and `:X.Y.Z-slim` / `:slim`).
+
+**Order:** bump version → commit → push `main` → push the version tag. Retagging after a failed publish is fine if that version never landed on the registry; otherwise bump the patch (e.g. `0.5.0` → `0.5.1`).
+
+### PyPI trusted publisher (one-time)
+
+Required before the first successful `v*` publish. On [pypi.org/manage/project/voltmem/settings/publishing/](https://pypi.org/manage/project/voltmem/settings/publishing/):
+
+| Field | Value |
+|---|---|
+| Owner | `Rouche01` |
+| Repository | `voltmem` |
+| Workflow name | `publish-pypi.yml` |
+| Environment | `release` |
+
+GitHub must have an Environments entry named `release` (Settings → Environments). After saving the publisher, re-run the failed **Publish to PyPI** job or use workflow_dispatch — no new tag needed if `0.5.0` never uploaded.
+
+### npm trusted publisher
+
+Same idea on npm for `@voltmem/client`: workflow `publish-npm.yml`, environment `release`. Already required for `client-v*` tags.
 
 ## Invariants
 
