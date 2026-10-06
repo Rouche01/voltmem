@@ -3,21 +3,31 @@ FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
-# Build deps for sentence-transformers / torch wheels when needed
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY pyproject.toml README.md ./
 COPY voltmem ./voltmem
 COPY sidecar ./sidecar
 
-RUN pip install --no-cache-dir -e ".[sidecar,embeddings]" \
-    && apt-get purge -y --auto-remove build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# 1 installs sentence-transformers (PyTorch). 0 is the hashing scorer only.
+ARG EMBEDDINGS=1
+
+RUN set -eu; \
+    if [ "$EMBEDDINGS" != "0" ] && [ "$EMBEDDINGS" != "1" ]; then \
+      echo "EMBEDDINGS must be 0 or 1" >&2; \
+      exit 1; \
+    fi; \
+    if [ "$EMBEDDINGS" = "1" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends build-essential \
+      && rm -rf /var/lib/apt/lists/* \
+      && pip install --no-cache-dir -e ".[sidecar,embeddings]" \
+      && apt-get purge -y --auto-remove build-essential \
+      && rm -rf /var/lib/apt/lists/*; \
+    else \
+      pip install --no-cache-dir -e ".[sidecar]"; \
+    fi
 
 ENV VOLTMEM_DB_PATH=/data/voltmem.db \
-    VOLTMEM_EMBEDDINGS=1 \
+    VOLTMEM_EMBEDDINGS=${EMBEDDINGS} \
     VOLTMEM_PROFILE=stylens \
     HOST=0.0.0.0 \
     PORT=8080 \

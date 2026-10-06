@@ -17,20 +17,39 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            embeddings: "1"
+          - variant: slim
+            embeddings: "0"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Image name (lowercase for GHCR)
+      - name: Image tags
         id: meta
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
+          set -eu
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "image=${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
+          IMAGE="${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}"
           if [[ "${{ github.ref }}" == refs/tags/sidecar-v* ]]; then
             VERSION="${GITHUB_REF_NAME#sidecar-v}"
-            echo "tags=${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}:${VERSION},${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
+            if [[ "$VARIANT" == "slim" ]]; then
+              echo "tags=${IMAGE}:${VERSION}-slim,${IMAGE}:slim" >> "$GITHUB_OUTPUT"
+            else
+              echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            fi
           else
             SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-            echo "tags=${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}:sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            if [[ "$VARIANT" == "slim" ]]; then
+              echo "tags=${IMAGE}:sha-${SHA_SHORT}-slim" >> "$GITHUB_OUTPUT"
+            else
+              echo "tags=${IMAGE}:sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Set up Docker Buildx
@@ -49,6 +68,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: EMBEDDINGS=${{ matrix.embeddings }}
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}

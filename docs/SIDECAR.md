@@ -73,16 +73,20 @@ Tenant is the database. Domain is a typed partition inside it. Both live in the 
 
 ## Option A — Pull a published image (recommended)
 
-When releases publish to GitHub Container Registry:
+A `sidecar-v*` tag publishes two images. `:latest` includes sentence-transformers (MiniLM). `:slim` uses the hashing scorer. Hashing is enough when the query shares tokens with the stored text. The score floor is `0`, so those overlapping tokens still rank. Use the full image when a search must match a fact that shares no tokens with the query.
 
 ```bash
-docker pull ghcr.io/rouche01/voltmem-sidecar:latest
+# Hashing scorer
+docker pull ghcr.io/rouche01/voltmem-sidecar:slim
 
 docker run -d --name voltmem \
   -p 8080:8080 \
   -e VOLTMEM_API_KEY="$(openssl rand -hex 32)" \
   -v voltmem-data:/data \
-  ghcr.io/rouche01/voltmem-sidecar:latest
+  ghcr.io/rouche01/voltmem-sidecar:slim
+
+# Full image (MiniLM). Pin a release with :0.6.0 or :0.6.0-slim.
+# docker pull ghcr.io/rouche01/voltmem-sidecar:latest
 ```
 
 Verify:
@@ -108,15 +112,20 @@ The Dockerfile lives at the root of
 git clone https://github.com/Rouche01/voltmem.git
 cd voltmem
 
+# Full image (default): sentence-transformers, VOLTMEM_EMBEDDINGS=1
 docker build -t voltmem-sidecar .
+
+# Slim image: hashing scorer, VOLTMEM_EMBEDDINGS=0
+docker build --build-arg EMBEDDINGS=0 -t voltmem-sidecar:slim .
+
 docker run -d --name voltmem \
   -p 8080:8080 \
   -e VOLTMEM_API_KEY=replace-me \
   -v voltmem-data:/data \
-  voltmem-sidecar
+  voltmem-sidecar:slim
 ```
 
-No install of Python on the host is required — only Docker.
+No install of Python on the host is required — only Docker. `EMBEDDINGS` must be `0` or `1`. Omitting it builds the full image.
 
 ---
 
@@ -214,16 +223,16 @@ Full route table: [sidecar/README.md](../sidecar/README.md).
 ## Publishing the image (maintainers)
 
 CI workflow [`.github/workflows/publish-sidecar.yml`](../.github/workflows/publish-sidecar.yml)
-builds the Dockerfile and pushes to:
+builds both Dockerfile variants and pushes to `ghcr.io/rouche01/voltmem-sidecar`.
 
-`ghcr.io/rouche01/voltmem-sidecar`
-
-Triggers: tags matching `sidecar-v*` (e.g. `sidecar-v0.1.0`) and manual
-`workflow_dispatch`.
+Triggers: tags matching `sidecar-v*` (e.g. `sidecar-v0.6.0`) and manual
+`workflow_dispatch`. A version tag pushes `:VERSION` and `:latest` (embeddings)
+plus `:VERSION-slim` and `:slim` (hashing). A manual run pushes `:sha-<short>`
+and `:sha-<short>-slim`.
 
 ```bash
-git tag sidecar-v0.1.0
-git push origin sidecar-v0.1.0
+git tag sidecar-v0.6.0
+git push origin sidecar-v0.6.0
 ```
 
 After the first successful push, set the GHCR package visibility to **Public**

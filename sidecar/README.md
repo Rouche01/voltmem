@@ -25,16 +25,24 @@ HTTP addresses a tenant as `/v1/tenants/{tenant_id}`. `/v1/users/{tenant_id}/…
 ### Docker (anyone)
 
 ```bash
-# Build from this repo's Dockerfile
+# Build from this repo's Dockerfile.
+# Default is the full image (sentence-transformers, VOLTMEM_EMBEDDINGS=1).
 git clone https://github.com/Rouche01/voltmem.git && cd voltmem
 docker build -t voltmem-sidecar .
+
+# Slim image: hashing scorer, no PyTorch.
+# Enough when queries share tokens with the stored text.
+docker build --build-arg EMBEDDINGS=0 -t voltmem-sidecar:slim .
+
 docker run --rm -p 8080:8080 \
   -e VOLTMEM_API_KEY=dev-secret \
   -v voltmem-data:/data \
-  voltmem-sidecar
+  voltmem-sidecar:slim
 
-# Or pull a release image (after GHCR publish):
-# docker pull ghcr.io/rouche01/voltmem-sidecar:latest
+# Release tags (after GHCR publish):
+# docker pull ghcr.io/rouche01/voltmem-sidecar:slim          # hashing
+# docker pull ghcr.io/rouche01/voltmem-sidecar:latest        # MiniLM
+# Pins: :0.6.0-slim and :0.6.0
 ```
 
 ### Local Python
