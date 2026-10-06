@@ -166,7 +166,7 @@ Each replaced row emits one `supersedes` edge to `superseded_by`. Memories that 
 
 Open [http://127.0.0.1:8080/ui](http://127.0.0.1:8080/ui) while the sidecar is running (Docker or `python -m sidecar`). Paste the same `VOLTMEM_API_KEY` you started the process with, and the tenant id (`relay-local` for Relay). Both stay in this tab’s `sessionStorage`. Leave the key blank when the sidecar was started without `VOLTMEM_API_KEY`.
 
-**List** is `GET .../memories`, with text, domain (kind), and source filters. Domain is the fact kind from the profile classifier, or the `domain` sent on add. A row opens `GET .../memories/{id}` (volatility, protection, staleness, surprise, mismatch, age). **Graph** draws the `/graph` payload in the page: color by domain, faded replaced nodes, solid replacement lines, dashed shared-event lines. Memories with no links still show, grouped by domain.
+**List** is `GET .../memories`, with text, domain (kind), and source filters. Domain is the fact kind from the profile classifier, or the `domain` sent on add. A row opens `GET .../memories/{id}` (volatility, protection, staleness, surprise, mismatch, age). **Graph** draws the `/graph` payload in the page: color by domain, faded replaced nodes, solid replacement lines, dashed shared-event lines. Memories with no links still show, grouped by domain. **Clear tenant** (toolbar) calls `DELETE .../memories` after you type the tenant id to confirm — not one-click.
 
 For a laptop-only sidecar, start with `HOST=127.0.0.1` so `/ui` and `/v1` are not on other interfaces.
 

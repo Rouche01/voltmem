@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: clear-tenant-ui
     content: "Later: memory browser Clear tenant — wire existing DELETE /v1/tenants/{id}/memories with typed confirm (tenant id). Refresh list/graph after success. Not one-click; not on the graph canvas."
-    status: pending
+    status: completed
   - id: clear-domain-api-ui
     content: "Later: domain-scoped clear — add engine/HTTP support (e.g. DELETE .../memories?domain=…), TS client if needed, then browser Clear domain for the active domain filter with typed confirm. Docs + sidecar tests."
     status: pending
@@ -254,7 +254,7 @@ Operator affordance for dogfood tenants (`relay-local`, draft CE data). **Not** 
 - [x] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
 - [x] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [x] SIDECAR + sidecar README document how to open the browser
-- [ ] Browser can clear a whole tenant with typed confirm (existing API)
+- [x] Browser can clear a whole tenant with typed confirm (existing API)
 - [ ] Domain-scoped clear exists in HTTP + browser with typed confirm
 
 ## Suggested order of work

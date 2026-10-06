@@ -190,7 +190,7 @@ Cloudflare Worker secrets: `VOLTMEM_URL`, `VOLTMEM_API_KEY` — never expose the
 
 ## Memory browser
 
-Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a tenant id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/tenants/{tenant_id}/graph`. `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
+Operators can open `http://127.0.0.1:8080/ui` on a running sidecar and paste `VOLTMEM_API_KEY` plus a tenant id such as `relay-local`. The page lists active memories and draws replacement and shared-event edges from `GET /v1/tenants/{tenant_id}/graph`. **Clear tenant** wipes that tenant’s memories via `DELETE .../memories` after a typed confirm. `/ui` itself is unauthenticated; memory calls still send `X-API-Key`. Bind with `HOST=127.0.0.1` when the UI should stay on the machine. Details: [sidecar/README.md](../sidecar/README.md#memory-browser).
 
 ---
 

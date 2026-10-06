@@ -132,6 +132,11 @@
       border: 1px solid var(--accent);
     }
 
+    .toolbar button.is-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
     .view-toggle {
       display: flex;
     }
@@ -224,6 +229,72 @@
     }
     #graph-legend .graph-help {
       margin: 0;
+    }
+
+    #clear-tenant-dialog {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0;
+      max-width: min(420px, calc(100vw - 32px));
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 0 12px 40px rgba(28, 25, 21, 0.18);
+    }
+    #clear-tenant-dialog::backdrop {
+      background: rgba(28, 25, 21, 0.35);
+    }
+    #clear-tenant-dialog form {
+      display: grid;
+      gap: 12px;
+      padding: 18px 18px 16px;
+    }
+    #clear-tenant-dialog h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+    #clear-tenant-dialog p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    #clear-tenant-dialog label {
+      display: grid;
+      gap: 4px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    #clear-tenant-dialog input {
+      font: inherit;
+      font-weight: 400;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+    }
+    #clear-tenant-dialog .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    #clear-tenant-dialog .dialog-actions button {
+      font: inherit;
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fffdf8;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    #clear-tenant-dialog .dialog-actions button[type="submit"] {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+    }
+    #clear-tenant-dialog .dialog-actions button[type="submit"]:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
     }
 
     #graph-tooltip {
@@ -376,6 +447,7 @@
         <input id="filter-source" type="search" placeholder="Substring">
       </label>
       <button id="refresh" type="button">Refresh</button>
+      <button id="clear-tenant" type="button" class="is-danger" title="Delete every memory for the connected tenant">Clear tenant</button>
       <div class="view-toggle" role="group" aria-label="View">
         <button id="view-list" type="button" aria-pressed="true">List</button>
         <button id="view-graph" type="button" aria-pressed="false">Graph</button>
@@ -400,6 +472,19 @@
     </div>
   </main>
   <div id="graph-tooltip" role="tooltip" hidden></div>
+  <dialog id="clear-tenant-dialog" aria-labelledby="clear-tenant-title">
+    <form id="clear-tenant-form">
+      <h2 id="clear-tenant-title">Clear tenant memories</h2>
+      <p>Deletes every memory for this tenant. Type the tenant id to confirm.</p>
+      <label>Tenant id
+        <input id="clear-tenant-confirm" type="text" autocomplete="off" spellcheck="false" required>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="clear-tenant-cancel">Cancel</button>
+        <button type="submit" id="clear-tenant-submit" disabled>Clear all</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     const STORAGE_KEY = "voltmem.browser";
     const scoreFields = [
@@ -427,6 +512,12 @@
     const sourceEl = document.getElementById("filter-source");
     const viewListBtn = document.getElementById("view-list");
     const viewGraphBtn = document.getElementById("view-graph");
+    const clearTenantBtn = document.getElementById("clear-tenant");
+    const clearTenantDialog = document.getElementById("clear-tenant-dialog");
+    const clearTenantConfirm = document.getElementById("clear-tenant-confirm");
+    const clearTenantSubmit = document.getElementById("clear-tenant-submit");
+    const clearTenantForm = document.getElementById("clear-tenant-form");
+    const clearTenantCancel = document.getElementById("clear-tenant-cancel");
 
     let session = { apiKey: "", userId: "" };
     let memories = [];
@@ -470,17 +561,21 @@
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     }
 
-    async function api(path) {
+    async function api(path, options = {}) {
       const headers = {};
       if (session.apiKey) headers["X-API-Key"] = session.apiKey;
-      const response = await fetch(path, { headers });
+      const init = { method: options.method || "GET", headers };
+      const response = await fetch(path, init);
       if (response.status === 401) {
         throw new Error("API key was rejected.");
       }
       if (!response.ok) {
         throw new Error("Request failed (" + response.status + ").");
       }
-      return response.json();
+      if (response.status === 204) return null;
+      const text = await response.text();
+      if (!text) return null;
+      return JSON.parse(text);
     }
 
     function userPath() {
@@ -1121,6 +1216,46 @@
       invalidateLayoutCache();
       loadMemories();
     });
+
+    function syncClearTenantConfirm() {
+      clearTenantSubmit.disabled = clearTenantConfirm.value.trim() !== session.userId;
+    }
+
+    clearTenantBtn.addEventListener("click", () => {
+      if (!session.userId) {
+        setStatus("Connect with a tenant first.", true);
+        return;
+      }
+      clearTenantConfirm.value = "";
+      syncClearTenantConfirm();
+      clearTenantDialog.showModal();
+      clearTenantConfirm.focus();
+    });
+    clearTenantCancel.addEventListener("click", () => clearTenantDialog.close());
+    clearTenantConfirm.addEventListener("input", syncClearTenantConfirm);
+    clearTenantForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const typed = clearTenantConfirm.value.trim();
+      if (!session.userId || typed !== session.userId) return;
+      clearTenantSubmit.disabled = true;
+      setStatus("Clearing tenant memories…");
+      try {
+        await api(userPath() + "/memories", { method: "DELETE" });
+        clearTenantDialog.close();
+        selectedId = "";
+        clearDetailPlaceholder();
+        hideGraphTooltip();
+        invalidateLayoutCache();
+        resetCamera();
+        await loadMemories();
+        setStatus("Cleared all memories for " + session.userId + ".");
+      } catch (err) {
+        syncClearTenantConfirm();
+        setStatus(err.message || "Clear failed.", true);
+      }
+    });
+    clearTenantDialog.addEventListener("cancel", () => clearTenantDialog.close());
+
     textEl.addEventListener("input", () => {
       resetCamera();
       invalidateLayoutCache();
