@@ -510,6 +510,7 @@ def test_ui_shell_is_open_and_has_list_inspect():
             assert "effective_volatility" in body
             assert "protection_weight" in body
             assert 'id="view-graph"' in body
+            assert 'id="list-pager"' in body
             assert 'id="clear-tenant"' in body
             assert 'id="clear-domain"' in body
             assert "/graph" in body

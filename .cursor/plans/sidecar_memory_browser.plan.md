@@ -26,6 +26,9 @@ todos:
   - id: clear-domain-api-ui
     content: "Later: domain-scoped clear — add engine/HTTP support (e.g. DELETE .../memories?domain=…), TS client if needed, then browser Clear domain for the active domain filter with typed confirm. Docs + sidecar tests."
     status: completed
+  - id: list-pagination
+    content: "List view client-side pagination (25 per page) over filtered memories; Previous/Next + status; reset page on filter/load."
+    status: completed
 isProject: true
 ---
 

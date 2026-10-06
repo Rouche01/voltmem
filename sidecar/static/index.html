@@ -360,8 +360,42 @@
     }
 
     #list[hidden],
-    #graph-wrap[hidden] {
+    #graph-wrap[hidden],
+    #list-pager[hidden] {
       display: none;
+    }
+
+    #list-pager {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    #list-pager .pager-status {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    #list-pager .pager-controls {
+      display: flex;
+      gap: 6px;
+    }
+    #list-pager button {
+      font: inherit;
+      font-size: 0.82rem;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf8;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    #list-pager button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
     }
 
     .row {
@@ -473,6 +507,13 @@
     <div class="workspace">
       <section class="panel" id="browser-pane" aria-label="Memories">
         <ul id="list"></ul>
+        <nav id="list-pager" hidden aria-label="List pages">
+          <span class="pager-status" id="list-pager-status"></span>
+          <div class="pager-controls">
+            <button type="button" id="list-prev">Previous</button>
+            <button type="button" id="list-next">Next</button>
+          </div>
+        </nav>
         <div id="graph-wrap" hidden>
           <div id="graph-toolbar">
             <button id="graph-badges" type="button" aria-pressed="false" title="Short ids also appear automatically when zoomed in">Show ids</button>
@@ -529,6 +570,10 @@
     const SVG_NS = "http://www.w3.org/2000/svg";
     const DOMAIN_COLORS = ["#0f3d3e", "#8c4a2f", "#3d5a80", "#6b4c7a", "#2f6b4f", "#8a6a2f", "#7a3b4a", "#3f5e4a"];
     const listEl = document.getElementById("list");
+    const listPager = document.getElementById("list-pager");
+    const listPagerStatus = document.getElementById("list-pager-status");
+    const listPrevBtn = document.getElementById("list-prev");
+    const listNextBtn = document.getElementById("list-next");
     const graphWrap = document.getElementById("graph-wrap");
     const graphEl = document.getElementById("graph");
     const legendEl = document.getElementById("graph-legend");
@@ -561,6 +606,8 @@
     let selectedId = "";
     let loadError = "";
     let view = "list";
+    const LIST_PAGE_SIZE = 25;
+    let listPage = 0;
     // Camera resets on load, filter, resize, and Reset; preserved across selection redraws.
     const CAMERA_MIN = 0.5;
     const CAMERA_MAX = 4;
@@ -1074,8 +1121,10 @@
       graphWrap.hidden = !graphMode;
       viewListBtn.setAttribute("aria-pressed", graphMode ? "false" : "true");
       viewGraphBtn.setAttribute("aria-pressed", graphMode ? "true" : "false");
-      if (graphMode) renderGraph();
-      else {
+      if (graphMode) {
+        listPager.hidden = true;
+        renderGraph();
+      } else {
         hideGraphTooltip();
         renderList();
       }
@@ -1085,22 +1134,31 @@
       const shown = memories.filter(matches);
       listEl.replaceChildren();
       if (!session.userId) {
+        listPager.hidden = true;
         listEl.append(emptyItem("Connect with a tenant to load memories."));
         return;
       }
       if (loadError) {
+        listPager.hidden = true;
         listEl.append(emptyItem(loadError));
         return;
       }
       if (!memories.length) {
+        listPager.hidden = true;
         listEl.append(emptyItem("No active memories for this tenant."));
         return;
       }
       if (!shown.length) {
+        listPager.hidden = true;
         listEl.append(emptyItem("No memories match these filters."));
         return;
       }
-      for (const item of shown) {
+      const totalPages = Math.max(1, Math.ceil(shown.length / LIST_PAGE_SIZE));
+      if (listPage >= totalPages) listPage = totalPages - 1;
+      if (listPage < 0) listPage = 0;
+      const start = listPage * LIST_PAGE_SIZE;
+      const pageItems = shown.slice(start, start + LIST_PAGE_SIZE);
+      for (const item of pageItems) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "row" + (item.id === selectedId ? " is-selected" : "");
@@ -1117,6 +1175,14 @@
         li.append(button);
         listEl.append(li);
       }
+      const from = start + 1;
+      const to = start + pageItems.length;
+      listPagerStatus.textContent =
+        from + "–" + to + " of " + shown.length
+        + " · page " + (listPage + 1) + " of " + totalPages;
+      listPrevBtn.disabled = listPage <= 0;
+      listNextBtn.disabled = listPage >= totalPages - 1;
+      listPager.hidden = shown.length <= LIST_PAGE_SIZE;
     }
 
     function emptyItem(message) {
@@ -1249,6 +1315,7 @@
       selectedId = "";
       resetCamera();
       invalidateLayoutCache();
+      listPage = 0;
       syncClearDomainButton();
       loadMemories();
     });
@@ -1256,6 +1323,7 @@
     document.getElementById("refresh").addEventListener("click", () => {
       resetCamera();
       invalidateLayoutCache();
+      listPage = 0;
       loadMemories();
     });
 
@@ -1289,6 +1357,7 @@
         hideGraphTooltip();
         invalidateLayoutCache();
         resetCamera();
+        listPage = 0;
         await loadMemories();
         setStatus("Cleared all memories for " + session.userId + ".");
       } catch (err) {
@@ -1340,6 +1409,7 @@
         hideGraphTooltip();
         invalidateLayoutCache();
         resetCamera();
+        listPage = 0;
         domainEl.value = "";
         await loadMemories();
         setStatus("Cleared domain " + domain + " for " + session.userId + ".");
@@ -1351,23 +1421,35 @@
     clearDomainDialog.addEventListener("cancel", () => clearDomainDialog.close());
 
     textEl.addEventListener("input", () => {
+      listPage = 0;
       resetCamera();
       invalidateLayoutCache();
       clearSelectionIfFilteredOut();
       renderView();
     });
     sourceEl.addEventListener("input", () => {
+      listPage = 0;
       resetCamera();
       invalidateLayoutCache();
       clearSelectionIfFilteredOut();
       renderView();
     });
     domainEl.addEventListener("change", () => {
+      listPage = 0;
       resetCamera();
       invalidateLayoutCache();
       clearSelectionIfFilteredOut();
       syncClearDomainButton();
       renderView();
+    });
+    listPrevBtn.addEventListener("click", () => {
+      if (listPage <= 0) return;
+      listPage -= 1;
+      renderList();
+    });
+    listNextBtn.addEventListener("click", () => {
+      listPage += 1;
+      renderList();
     });
     viewListBtn.addEventListener("click", () => {
       view = "list";
