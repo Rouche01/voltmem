@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: clear-domain-api-ui
     content: "Later: domain-scoped clear — add engine/HTTP support (e.g. DELETE .../memories?domain=…), TS client if needed, then browser Clear domain for the active domain filter with typed confirm. Docs + sidecar tests."
-    status: pending
+    status: completed
 isProject: true
 ---
 
@@ -255,7 +255,7 @@ Operator affordance for dogfood tenants (`relay-local`, draft CE data). **Not** 
 - [x] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [x] SIDECAR + sidecar README document how to open the browser
 - [x] Browser can clear a whole tenant with typed confirm (existing API)
-- [ ] Domain-scoped clear exists in HTTP + browser with typed confirm
+- [x] Domain-scoped clear exists in HTTP + browser with typed confirm
 
 ## Suggested order of work
 

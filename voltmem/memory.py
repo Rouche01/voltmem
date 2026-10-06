@@ -1316,13 +1316,26 @@ class MemoryLayer:
             self._vector_index.close()
         self._store.close()
 
-    def clear(self) -> None:
-        """Delete all memories for this layer's namespace."""
-        self._store.delete_namespace(self.namespace)
+    def clear(self, domain: str | None = None) -> None:
+        """Delete memories for this layer's namespace.
+
+        Pass ``domain`` to remove only that kind; omit to wipe the tenant.
+        """
+        if domain is None:
+            self._store.delete_namespace(self.namespace)
+            if self._vector_index is not None:
+                self._vector_index.delete_namespace(self.namespace)
+            if self._tracker is not None:
+                self._tracker.clear_namespace(self.namespace)
+            return
+        name = domain.strip()
+        if not name:
+            raise ValueError("domain must be non-empty when provided")
+        self._store.delete_domain(self.namespace, name)
         if self._vector_index is not None:
-            self._vector_index.delete_namespace(self.namespace)
+            self._vector_index.delete_domain(self.namespace, name)
         if self._tracker is not None:
-            self._tracker.clear_namespace(self.namespace)
+            self._tracker.clear_domain(self.namespace, name)
 
     def __enter__(self):
         return self

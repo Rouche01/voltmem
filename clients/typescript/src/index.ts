@@ -2,6 +2,7 @@ import type {
   AddData,
   AddOptions,
   AddEventOptions,
+  ClearOptions,
   DomainStats,
   Facet,
   MaintenanceTriggerOptions,
@@ -18,6 +19,7 @@ export type {
   AddData,
   AddOptions,
   AddEventOptions,
+  ClearOptions,
   DomainStat,
   DomainStats,
   Facet,
@@ -179,11 +181,18 @@ export class VoltMemClient {
     );
   }
 
-  async clear(options: UserOptions = {}): Promise<{ cleared: boolean }> {
+  async clear(
+    options: ClearOptions = {},
+  ): Promise<{ cleared: boolean; domain?: string }> {
     const tenantId = this.requireTenantId(options);
-    return this.request<{ cleared: boolean }>(
+    const params = new URLSearchParams();
+    if (options.domain !== undefined && options.domain !== "") {
+      params.set("domain", options.domain);
+    }
+    const qs = params.toString();
+    return this.request<{ cleared: boolean; domain?: string }>(
       "DELETE",
-      `/v1/tenants/${encodeURIComponent(tenantId)}/memories`,
+      `/v1/tenants/${encodeURIComponent(tenantId)}/memories${qs ? `?${qs}` : ""}`,
     );
   }
 

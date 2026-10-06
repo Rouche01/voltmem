@@ -308,9 +308,12 @@ class Memory:
             return False
         return self._layer.remove(memory_id)
 
-    def clear(self) -> None:
-        """Remove all memories for this user."""
-        self._layer.clear()
+    def clear(self, domain: str | None = None) -> None:
+        """Remove memories for this user.
+
+        Pass ``domain`` to clear one kind; omit to clear the whole tenant.
+        """
+        self._layer.clear(domain=domain)
 
     def summary(self) -> dict[str, Any]:
         return self._layer.summary()

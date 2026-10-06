@@ -180,6 +180,24 @@ test("tenantId wins over userId", async () => {
   assert.match(seen, /\/v1\/tenants\/relay-local\/memories$/);
 });
 
+test("clear optionally scopes by domain", async () => {
+  const urls: string[] = [];
+  const client = new VoltMemClient({
+    baseUrl: "https://voltmem.example.com",
+    tenantId: "alice",
+    fetch: (async (input) => {
+      urls.push(String(input));
+      return jsonResponse(200, { cleared: true, domain: "style_preference" });
+    }) as typeof fetch,
+  });
+
+  await client.clear();
+  assert.match(urls[0]!, /\/v1\/tenants\/alice\/memories$/);
+
+  await client.clear({ domain: "style_preference" });
+  assert.match(urls[1]!, /\/v1\/tenants\/alice\/memories\?domain=style_preference$/);
+});
+
 test("requires tenantId", async () => {
   const client = new VoltMemClient({
     baseUrl: "https://voltmem.example.com",

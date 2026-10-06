@@ -212,10 +212,29 @@ def create_app() -> FastAPI:
     @app.delete("/v1/tenants/{tenant_id}/memories", dependencies=authed)
     def clear_memories(
         tenant_id: str,
+        domain: str | None = Query(
+            None,
+            description="When set, delete only this domain (kind); omit to clear the tenant",
+        ),
         mem_pool: MemoryPool = Depends(get_pool),
-    ) -> dict[str, bool]:
-        mem_pool.for_user(tenant_id).clear()
-        return {"cleared": True}
+    ) -> dict[str, Any]:
+        name = domain.strip() if domain is not None else None
+        if domain is not None and not name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="domain must be non-empty when provided",
+            )
+        try:
+            mem_pool.for_user(tenant_id).clear(domain=name)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
+        out: dict[str, Any] = {"cleared": True}
+        if name is not None:
+            out["domain"] = name
+        return out
 
     @app.get("/v1/tenants/{tenant_id}/summary", dependencies=authed)
     def summary(

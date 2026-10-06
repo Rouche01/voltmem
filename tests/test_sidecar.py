@@ -248,6 +248,40 @@ def test_clear_and_summary():
         assert client.get("/v1/users/carol/memories").json() == []
 
 
+def test_clear_domain_keeps_other_kinds():
+    with _client(VOLTMEM_DB_PATH=":memory:") as client:
+        a = client.post(
+            "/v1/tenants/domain-clear/memories",
+            json={"data": "I prefer navy linen", "domain": "style_preference"},
+        )
+        b = client.post(
+            "/v1/tenants/domain-clear/memories",
+            json={"data": "Dressing for a beach wedding", "domain": "session_occasion"},
+        )
+        assert a.status_code == 200, a.text
+        assert b.status_code == 200, b.text
+
+        bad = client.delete("/v1/tenants/domain-clear/memories?domain=")
+        assert bad.status_code == 400
+
+        cleared = client.delete(
+            "/v1/tenants/domain-clear/memories?domain=style_preference"
+        )
+        assert cleared.status_code == 200, cleared.text
+        body = cleared.json()
+        assert body["cleared"] is True
+        assert body["domain"] == "style_preference"
+
+        remaining = client.get("/v1/tenants/domain-clear/memories").json()
+        assert len(remaining) == 1
+        assert remaining[0]["domain"] == "session_occasion"
+        assert remaining[0]["id"] == b.json()["id"]
+
+        graph = client.get("/v1/tenants/domain-clear/graph").json()
+        assert len(graph["nodes"]) == 1
+        assert graph["nodes"][0]["domain"] == "session_occasion"
+
+
 def test_occasion_domain():
     with _client(VOLTMEM_DB_PATH=":memory:") as client:
         r = client.post(
@@ -476,6 +510,8 @@ def test_ui_shell_is_open_and_has_list_inspect():
             assert "effective_volatility" in body
             assert "protection_weight" in body
             assert 'id="view-graph"' in body
+            assert 'id="clear-tenant"' in body
+            assert 'id="clear-domain"' in body
             assert "/graph" in body
             assert "edge-supersedes" in body
             assert "edge-facet" in body
@@ -499,6 +535,7 @@ if __name__ == "__main__":
         test_namespace_isolation,
         test_api_key_required_when_set,
         test_clear_and_summary,
+        test_clear_domain_keeps_other_kinds,
         test_occasion_domain,
         test_maintenance_dry_run_gates_expire_cleanup,
         test_store_list_all_includes_superseded_rows,

@@ -69,6 +69,8 @@ class VectorIndex(Protocol):
 
     def delete_namespace(self, namespace: str) -> None: ...
 
+    def delete_domain(self, namespace: str, domain: str) -> None: ...
+
     def search(
         self,
         query_vector: list[float],
@@ -105,6 +107,14 @@ class BruteForceVectorIndex:
 
     def delete_namespace(self, namespace: str) -> None:
         keys = [k for k in self._rows if k[0] == namespace]
+        for key in keys:
+            del self._rows[key]
+
+    def delete_domain(self, namespace: str, domain: str) -> None:
+        keys = [
+            k for k, (dom, _ev, _vec) in self._rows.items()
+            if k[0] == namespace and dom == domain
+        ]
         for key in keys:
             del self._rows[key]
 
@@ -212,6 +222,13 @@ class SqliteVectorIndex:
     def delete_namespace(self, namespace: str) -> None:
         self._conn.execute(
             "DELETE FROM memory_vectors WHERE namespace=?", (namespace,))
+        self._conn.commit()
+
+    def delete_domain(self, namespace: str, domain: str) -> None:
+        self._conn.execute(
+            "DELETE FROM memory_vectors WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        )
         self._conn.commit()
 
     def search(

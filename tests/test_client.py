@@ -41,6 +41,16 @@ def test_delete_and_clear():
         assert mem.get_all() == []
 
 
+def test_clear_domain():
+    with Memory(user_id="u3b", db_path=":memory:") as mem:
+        mem.add("I prefer navy", domain="style_preference")
+        mem.add("Beach wedding Saturday", domain="session_occasion")
+        mem.clear(domain="style_preference")
+        left = mem.get_all()
+        assert len(left) == 1
+        assert left[0]["domain"] == "session_occasion"
+
+
 def test_add_messages_extracts_sentences():
     with Memory(user_id="u4", db_path=":memory:") as mem:
         out = mem.add([
@@ -79,6 +89,7 @@ if __name__ == "__main__":
         test_add_messages_extracts_sentences,
         test_add_messages_no_extract,
         test_delete_and_clear,
+        test_clear_domain,
         test_multi_tenant_isolation,
     ]
     passed = failed = 0

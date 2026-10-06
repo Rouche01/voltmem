@@ -190,3 +190,6 @@ class VolatilityTracker:
 
     def clear_namespace(self, namespace: str) -> None:
         self._store.delete_domain_stats_namespace(namespace)
+
+    def clear_domain(self, namespace: str, domain: str) -> None:
+        self._store.delete_domain_stats(namespace, domain)

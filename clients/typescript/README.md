@@ -73,7 +73,7 @@ await bob.add("I prefer neon colors");
 | `getAll()` | `GET .../memories` |
 | `get(id)` | `GET .../memories/{id}` |
 | `delete(id)` | `DELETE .../memories/{id}` |
-| `clear()` | `DELETE .../memories` |
+| `clear()` / `clear({ domain })` | `DELETE .../memories` (optional `?domain=`) |
 | `summary()` | `GET .../summary` |
 | `domainStats()` | `GET .../domain_stats` |
 

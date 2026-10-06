@@ -231,7 +231,8 @@
       margin: 0;
     }
 
-    #clear-tenant-dialog {
+    #clear-tenant-dialog,
+    #clear-domain-dialog {
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 0;
@@ -240,30 +241,36 @@
       color: var(--ink);
       box-shadow: 0 12px 40px rgba(28, 25, 21, 0.18);
     }
-    #clear-tenant-dialog::backdrop {
+    #clear-tenant-dialog::backdrop,
+    #clear-domain-dialog::backdrop {
       background: rgba(28, 25, 21, 0.35);
     }
-    #clear-tenant-dialog form {
+    #clear-tenant-dialog form,
+    #clear-domain-dialog form {
       display: grid;
       gap: 12px;
       padding: 18px 18px 16px;
     }
-    #clear-tenant-dialog h2 {
+    #clear-tenant-dialog h2,
+    #clear-domain-dialog h2 {
       margin: 0;
       font-size: 1.05rem;
     }
-    #clear-tenant-dialog p {
+    #clear-tenant-dialog p,
+    #clear-domain-dialog p {
       margin: 0;
       color: var(--muted);
       font-size: 0.9rem;
     }
-    #clear-tenant-dialog label {
+    #clear-tenant-dialog label,
+    #clear-domain-dialog label {
       display: grid;
       gap: 4px;
       font-size: 0.82rem;
       font-weight: 600;
     }
-    #clear-tenant-dialog input {
+    #clear-tenant-dialog input,
+    #clear-domain-dialog input {
       font: inherit;
       font-weight: 400;
       padding: 8px 10px;
@@ -272,13 +279,15 @@
       background: #fff;
       color: var(--ink);
     }
-    #clear-tenant-dialog .dialog-actions {
+    #clear-tenant-dialog .dialog-actions,
+    #clear-domain-dialog .dialog-actions {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
       margin-top: 4px;
     }
-    #clear-tenant-dialog .dialog-actions button {
+    #clear-tenant-dialog .dialog-actions button,
+    #clear-domain-dialog .dialog-actions button {
       font: inherit;
       padding: 7px 12px;
       border-radius: 8px;
@@ -287,12 +296,18 @@
       color: var(--ink);
       cursor: pointer;
     }
-    #clear-tenant-dialog .dialog-actions button[type="submit"] {
+    #clear-tenant-dialog .dialog-actions button[type="submit"],
+    #clear-domain-dialog .dialog-actions button[type="submit"] {
       background: var(--danger);
       border-color: var(--danger);
       color: #fff;
     }
-    #clear-tenant-dialog .dialog-actions button[type="submit"]:disabled {
+    #clear-tenant-dialog .dialog-actions button[type="submit"]:disabled,
+    #clear-domain-dialog .dialog-actions button[type="submit"]:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .toolbar button.is-danger:disabled {
       opacity: 0.45;
       cursor: not-allowed;
     }
@@ -448,6 +463,7 @@
       </label>
       <button id="refresh" type="button">Refresh</button>
       <button id="clear-tenant" type="button" class="is-danger" title="Delete every memory for the connected tenant">Clear tenant</button>
+      <button id="clear-domain" type="button" class="is-danger" title="Delete memories for the selected domain filter" disabled>Clear domain</button>
       <div class="view-toggle" role="group" aria-label="View">
         <button id="view-list" type="button" aria-pressed="true">List</button>
         <button id="view-graph" type="button" aria-pressed="false">Graph</button>
@@ -485,6 +501,19 @@
       </div>
     </form>
   </dialog>
+  <dialog id="clear-domain-dialog" aria-labelledby="clear-domain-title">
+    <form id="clear-domain-form">
+      <h2 id="clear-domain-title">Clear domain memories</h2>
+      <p id="clear-domain-blurb">Deletes every memory of this kind for the connected tenant. Type the domain name to confirm.</p>
+      <label>Domain (kind)
+        <input id="clear-domain-confirm" type="text" autocomplete="off" spellcheck="false" required>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="clear-domain-cancel">Cancel</button>
+        <button type="submit" id="clear-domain-submit" disabled>Clear domain</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     const STORAGE_KEY = "voltmem.browser";
     const scoreFields = [
@@ -518,6 +547,13 @@
     const clearTenantSubmit = document.getElementById("clear-tenant-submit");
     const clearTenantForm = document.getElementById("clear-tenant-form");
     const clearTenantCancel = document.getElementById("clear-tenant-cancel");
+    const clearDomainBtn = document.getElementById("clear-domain");
+    const clearDomainDialog = document.getElementById("clear-domain-dialog");
+    const clearDomainConfirm = document.getElementById("clear-domain-confirm");
+    const clearDomainSubmit = document.getElementById("clear-domain-submit");
+    const clearDomainForm = document.getElementById("clear-domain-form");
+    const clearDomainCancel = document.getElementById("clear-domain-cancel");
+    const clearDomainBlurb = document.getElementById("clear-domain-blurb");
 
     let session = { apiKey: "", userId: "" };
     let memories = [];
@@ -599,6 +635,11 @@
       domainEl.replaceChildren(new Option("All kinds", ""));
       for (const domain of domains) domainEl.append(new Option(domain, domain));
       domainEl.value = domains.includes(current) ? current : "";
+      syncClearDomainButton();
+    }
+
+    function syncClearDomainButton() {
+      clearDomainBtn.disabled = !session.userId || !domainEl.value;
     }
 
     function domainColor(domain) {
@@ -1208,6 +1249,7 @@
       selectedId = "";
       resetCamera();
       invalidateLayoutCache();
+      syncClearDomainButton();
       loadMemories();
     });
 
@@ -1256,6 +1298,58 @@
     });
     clearTenantDialog.addEventListener("cancel", () => clearTenantDialog.close());
 
+    function syncClearDomainConfirm() {
+      clearDomainSubmit.disabled = clearDomainConfirm.value.trim() !== domainEl.value;
+    }
+
+    clearDomainBtn.addEventListener("click", () => {
+      const domain = domainEl.value;
+      if (!session.userId) {
+        setStatus("Connect with a tenant first.", true);
+        return;
+      }
+      if (!domain) {
+        setStatus("Select a domain filter before clearing a kind.", true);
+        return;
+      }
+      clearDomainBlurb.textContent =
+        "Deletes every \"" + domain + "\" memory for " + session.userId
+        + ". Type the domain name to confirm.";
+      clearDomainConfirm.value = "";
+      syncClearDomainConfirm();
+      clearDomainDialog.showModal();
+      clearDomainConfirm.focus();
+    });
+    clearDomainCancel.addEventListener("click", () => clearDomainDialog.close());
+    clearDomainConfirm.addEventListener("input", syncClearDomainConfirm);
+    clearDomainForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const domain = domainEl.value;
+      const typed = clearDomainConfirm.value.trim();
+      if (!session.userId || !domain || typed !== domain) return;
+      clearDomainSubmit.disabled = true;
+      setStatus("Clearing " + domain + "…");
+      try {
+        await api(
+          userPath() + "/memories?domain=" + encodeURIComponent(domain),
+          { method: "DELETE" }
+        );
+        clearDomainDialog.close();
+        selectedId = "";
+        clearDetailPlaceholder();
+        hideGraphTooltip();
+        invalidateLayoutCache();
+        resetCamera();
+        domainEl.value = "";
+        await loadMemories();
+        setStatus("Cleared domain " + domain + " for " + session.userId + ".");
+      } catch (err) {
+        syncClearDomainConfirm();
+        setStatus(err.message || "Clear domain failed.", true);
+      }
+    });
+    clearDomainDialog.addEventListener("cancel", () => clearDomainDialog.close());
+
     textEl.addEventListener("input", () => {
       resetCamera();
       invalidateLayoutCache();
@@ -1272,6 +1366,7 @@
       resetCamera();
       invalidateLayoutCache();
       clearSelectionIfFilteredOut();
+      syncClearDomainButton();
       renderView();
     });
     viewListBtn.addEventListener("click", () => {

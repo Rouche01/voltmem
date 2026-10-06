@@ -463,6 +463,26 @@ class MemoryStore:
             "DELETE FROM mismatch_evidence WHERE namespace=?", (namespace,))
         self._conn.commit()
 
+    def delete_domain(self, namespace: str, domain: str) -> int:
+        """Remove every memory row for namespace+domain. Returns deleted count."""
+        rows = self._conn.execute(
+            "SELECT id FROM memories WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        ).fetchall()
+        ids = [str(r[0]) for r in rows]
+        if ids:
+            self.delete_mismatch_evidence_for_items(ids)
+        cur = self._conn.execute(
+            "DELETE FROM memories WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        )
+        self._conn.execute(
+            "DELETE FROM domain_stats WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        )
+        self._conn.commit()
+        return int(cur.rowcount)
+
     def list_namespaces(self, *, exclude: tuple[str, ...] = ("__sidecar__",)) -> list[str]:
         """Distinct tenant namespaces present in memories or domain_stats."""
         rows = self._conn.execute(
@@ -518,6 +538,13 @@ class MemoryStore:
     def delete_domain_stats_namespace(self, namespace: str) -> None:
         self._conn.execute(
             "DELETE FROM domain_stats WHERE namespace=?", (namespace,))
+        self._conn.commit()
+
+    def delete_domain_stats(self, namespace: str, domain: str) -> None:
+        self._conn.execute(
+            "DELETE FROM domain_stats WHERE namespace=? AND domain=?",
+            (namespace, domain),
+        )
         self._conn.commit()
 
     # ── mismatch evidence (consolidate / sleeptime) ───────────────────────────

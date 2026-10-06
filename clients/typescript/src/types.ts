@@ -93,6 +93,11 @@ export type SearchOptions = TenantScope & {
 
 export type UserOptions = TenantScope;
 
+export type ClearOptions = TenantScope & {
+  /** When set, delete only this domain (kind); omit to clear the tenant. */
+  domain?: string;
+};
+
 export type MaintenanceTriggerOptions = TenantScope & {
   task?: string;
   dry_run?: boolean;
