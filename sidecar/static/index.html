@@ -149,7 +149,33 @@
     }
 
     #graph-wrap { min-height: 480px; }
-    #graph { display: block; width: 100%; }
+    #graph-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin: 0 0 6px;
+    }
+    #graph-toolbar button {
+      font: inherit;
+      font-size: 0.82rem;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf8;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    #graph-toolbar button[aria-pressed="true"] {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+    #graph {
+      display: block;
+      width: 100%;
+      cursor: grab;
+      touch-action: none;
+    }
+    #graph.is-panning { cursor: grabbing; }
     #graph .edge-supersedes { stroke: #1c1915; stroke-width: 1.5; }
     #graph .edge-facet { stroke: #8a8175; stroke-width: 1.25; stroke-dasharray: 4 3; }
     #graph .node { cursor: pointer; }
@@ -161,12 +187,44 @@
       pointer-events: none;
     }
     #graph .node .node-badge {
-      font-size: 9px;
+      font-size: 8px;
       fill: #5c564e;
+      opacity: 0;
+    }
+    #graph-wrap.show-badges #graph .node .node-badge {
       opacity: 1;
     }
-    #graph .node.is-selected circle.node-dot { stroke: #1c1915; stroke-width: 2.5; }
+    #graph .node.is-selected circle.node-dot { stroke: #1c1915; stroke-width: 2; }
     #graph-legend { margin: 8px 4px 0; }
+    #graph-legend .graph-counts {
+      margin: 0 0 6px;
+      color: var(--ink);
+      font-size: 0.85rem;
+    }
+    #graph-domain-legend {
+      list-style: none;
+      margin: 0 0 8px;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+    }
+    #graph-domain-legend li {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    #graph-domain-legend .swatch {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+    #graph-legend .graph-help {
+      margin: 0;
+    }
 
     #graph-tooltip {
       position: fixed;
@@ -328,8 +386,12 @@
       <section class="panel" id="browser-pane" aria-label="Memories">
         <ul id="list"></ul>
         <div id="graph-wrap" hidden>
+          <div id="graph-toolbar">
+            <button id="graph-badges" type="button" aria-pressed="false" title="Short ids also appear automatically when zoomed in">Show ids</button>
+            <button id="graph-reset" type="button">Reset view</button>
+          </div>
           <svg id="graph" role="img" aria-label="Memory graph"></svg>
-          <p id="graph-legend" class="secondary"></p>
+          <div id="graph-legend"></div>
         </div>
       </section>
       <section class="panel" id="detail" aria-live="polite">
@@ -357,6 +419,8 @@
     const graphEl = document.getElementById("graph");
     const legendEl = document.getElementById("graph-legend");
     const graphTooltip = document.getElementById("graph-tooltip");
+    const graphResetBtn = document.getElementById("graph-reset");
+    const graphBadgesBtn = document.getElementById("graph-badges");
     const detailEl = document.getElementById("detail");
     const domainEl = document.getElementById("filter-domain");
     const textEl = document.getElementById("filter-text");
@@ -370,6 +434,17 @@
     let selectedId = "";
     let loadError = "";
     let view = "list";
+    // Camera resets on load, filter, resize, and Reset; preserved across selection redraws.
+    const CAMERA_MIN = 0.5;
+    const CAMERA_MAX = 4;
+    const BADGE_ZOOM = 1.35;
+    let camera = { k: 1, tx: 0, ty: 0 };
+    let graphScene = null;
+    let tipAnchor = null;
+    let panDrag = null;
+    let badgesForced = false;
+    // Positions stay put across selection; rebuild only when the node set or canvas size changes.
+    let layoutCache = null;
 
     function setStatus(message, isError) {
       statusEl.textContent = message || "";
@@ -438,39 +513,166 @@
       return DOMAIN_COLORS[hash % DOMAIN_COLORS.length];
     }
 
+    function invalidateLayoutCache() {
+      layoutCache = null;
+    }
+
+    function layoutCacheKey(nodes, edges, width, height) {
+      const ids = nodes.map((node) => node.id).slice().sort().join(",");
+      const links = edges
+        .map((edge) => edge.source + ">" + edge.target + ":" + edge.kind)
+        .slice()
+        .sort()
+        .join(",");
+      return width + "x" + height + "|" + ids + "|" + links;
+    }
+
+    function placeShown(nodes, edges, width, height) {
+      const key = layoutCacheKey(nodes, edges, width, height);
+      if (layoutCache && layoutCache.key === key) {
+        const placed = nodes.map((node) => {
+          const pos = layoutCache.positions.get(node.id);
+          return { ...node, x: pos.x, y: pos.y, vx: 0, vy: 0 };
+        });
+        const byId = new Map(placed.map((node) => [node.id, node]));
+        return { placed, links: layoutCache.links, byId };
+      }
+      const result = layoutGraph(nodes, edges, width, height);
+      layoutCache = {
+        key,
+        links: result.links,
+        positions: new Map(result.placed.map((node) => [node.id, { x: node.x, y: node.y }])),
+      };
+      return result;
+    }
+
+    function badgesVisible() {
+      return badgesForced || camera.k >= BADGE_ZOOM;
+    }
+
+    function syncBadgeVisibility() {
+      graphWrap.classList.toggle("show-badges", badgesVisible());
+      graphBadgesBtn.setAttribute("aria-pressed", badgesForced ? "true" : "false");
+      graphBadgesBtn.textContent = badgesForced ? "Hide ids" : "Show ids";
+    }
+
+    function setLegendMessage(message) {
+      legendEl.replaceChildren();
+      const help = document.createElement("p");
+      help.className = "graph-help secondary";
+      help.textContent = message;
+      legendEl.append(help);
+    }
+
+    function renderGraphLegend(placed, links) {
+      legendEl.replaceChildren();
+      const domains = Array.from(new Set(placed.map((node) => node.domain || "unknown"))).sort();
+      const counts = document.createElement("p");
+      counts.className = "graph-counts";
+      const domainLabel = domains.length === 1 ? "domain" : "domains";
+      counts.textContent = placed.length + " shown · " + domains.length + " " + domainLabel;
+      legendEl.append(counts);
+
+      const domainList = document.createElement("ul");
+      domainList.id = "graph-domain-legend";
+      for (const domain of domains) {
+        const li = document.createElement("li");
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = domainColor(domain);
+        const label = document.createElement("span");
+        label.textContent = domain;
+        li.append(swatch, label);
+        domainList.append(li);
+      }
+      legendEl.append(domainList);
+
+      const kinds = new Set(links.map((edge) => edge.kind));
+      const parts = [
+        "Hover a dot for the full fact.",
+        "Scroll to zoom. Drag empty space to pan.",
+        "Short ids show when zoomed in, or via Show ids.",
+      ];
+      if (placed.some((node) => !node.active)) parts.push("Faded nodes are replaced.");
+      if (kinds.has("supersedes")) parts.push("Solid line replaces.");
+      if (kinds.has("facet")) parts.push("Dashed line shares an event.");
+      if (!kinds.size) parts.push("No replacement or shared-event links yet.");
+      const help = document.createElement("p");
+      help.className = "graph-help secondary";
+      help.textContent = parts.join(" ");
+      legendEl.append(help);
+    }
+
     function layoutGraph(nodes, edges, width, height) {
       const placed = nodes.map((node) => ({ ...node, x: width / 2, y: height / 2, vx: 0, vy: 0 }));
       const domains = Array.from(new Set(placed.map((node) => node.domain || "unknown")));
+      const counts = new Map();
+      for (const node of placed) {
+        const key = node.domain || "unknown";
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      // Keep a clear gap between dots + short id badges.
+      const minDist = 34;
       const homes = new Map();
       domains.forEach((domain, index) => {
         const angle = (index / Math.max(domains.length, 1)) * Math.PI * 2 - Math.PI / 2;
-        const radius = Math.min(width, height) * 0.28;
+        const radius = domains.length <= 1 ? 0 : Math.min(width, height) * 0.34;
         homes.set(domain, {
           x: width / 2 + Math.cos(angle) * radius,
           y: height / 2 + Math.sin(angle) * radius,
         });
       });
       const seen = new Map();
+      const golden = Math.PI * (3 - Math.sqrt(5));
       for (const node of placed) {
         const key = node.domain || "unknown";
-        const count = seen.get(key) || 0;
-        seen.set(key, count + 1);
+        const i = seen.get(key) || 0;
+        seen.set(key, i + 1);
         const home = homes.get(key);
-        node.x = home.x + Math.cos(count * 0.9) * 16;
-        node.y = home.y + Math.sin(count * 0.9) * 16;
+        const n = counts.get(key) || 1;
+        const ring = n <= 1 ? 0 : 20 + Math.sqrt(i) * 30;
+        node.x = home.x + Math.cos(i * golden) * ring;
+        node.y = home.y + Math.sin(i * golden) * ring;
       }
       const byId = new Map(placed.map((node) => [node.id, node]));
       const links = edges.filter((edge) =>
         (edge.kind === "supersedes" || edge.kind === "facet")
         && byId.has(edge.source) && byId.has(edge.target)
       );
-      for (let tick = 0; tick < 160; tick++) {
+
+      function separateCollisions(strength) {
+        for (let i = 0; i < placed.length; i++) {
+          for (let j = i + 1; j < placed.length; j++) {
+            const a = placed[i];
+            const b = placed[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist >= minDist) continue;
+            if (dist < 0.01) {
+              const jitter = (i + 1) * 0.7;
+              dx = Math.cos(jitter);
+              dy = Math.sin(jitter);
+              dist = 0.01;
+            }
+            const push = ((minDist - dist) / dist) * 0.5 * strength;
+            a.x -= dx * push;
+            a.y -= dy * push;
+            b.x += dx * push;
+            b.y += dy * push;
+          }
+        }
+      }
+
+      const pad = 36;
+      for (let tick = 0; tick < 220; tick++) {
         for (let i = 0; i < placed.length; i++) {
           for (let j = i + 1; j < placed.length; j++) {
             const dx = placed[j].x - placed[i].x;
             const dy = placed[j].y - placed[i].y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-            const force = 820 / (dist * dist);
+            let force = 1400 / (dist * dist);
+            if (dist < minDist) force += (minDist - dist) * 2.2;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
             placed[i].vx -= fx;
@@ -485,8 +687,8 @@
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-          const rest = edge.kind === "supersedes" ? 96 : 72;
-          const mag = (dist - rest) * 0.045;
+          const rest = Math.max(minDist + 8, edge.kind === "supersedes" ? 96 : 72);
+          const mag = (dist - rest) * 0.04;
           const fx = (dx / dist) * mag;
           const fy = (dy / dist) * mag;
           a.vx += fx;
@@ -496,21 +698,40 @@
         }
         for (const node of placed) {
           const home = homes.get(node.domain || "unknown");
-          node.vx += (home.x - node.x) * 0.025;
-          node.vy += (home.y - node.y) * 0.025;
+          // Weak home pull so collision can win over domain packing.
+          node.vx += (home.x - node.x) * 0.012;
+          node.vy += (home.y - node.y) * 0.012;
+          if (node.x < pad) node.vx += (pad - node.x) * 0.1;
+          if (node.x > width - pad) node.vx -= (node.x - (width - pad)) * 0.1;
+          if (node.y < pad) node.vy += (pad - node.y) * 0.1;
+          if (node.y > height - pad) node.vy -= (node.y - (height - pad)) * 0.1;
         }
-        const pad = 28;
         for (const node of placed) {
-          node.vx *= 0.72;
-          node.vy *= 0.72;
-          node.x = Math.max(pad, Math.min(width - pad, node.x + node.vx));
-          node.y = Math.max(pad, Math.min(height - 36, node.y + node.vy));
+          node.vx *= 0.78;
+          node.vy *= 0.78;
+          node.x += node.vx;
+          node.y += node.vy;
+        }
+        if (tick % 4 === 3) separateCollisions(0.85);
+      }
+      for (let pass = 0; pass < 12; pass++) separateCollisions(1);
+      for (const node of placed) {
+        node.x = Math.max(pad, Math.min(width - pad, node.x));
+        node.y = Math.max(pad, Math.min(height - pad, node.y));
+      }
+      // One more separation after clamp so edge piles do not restack.
+      for (let pass = 0; pass < 6; pass++) {
+        separateCollisions(1);
+        for (const node of placed) {
+          node.x = Math.max(pad, Math.min(width - pad, node.x));
+          node.y = Math.max(pad, Math.min(height - pad, node.y));
         }
       }
       return { placed, links, byId };
     }
 
     function hideGraphTooltip() {
+      tipAnchor = null;
       graphTooltip.hidden = true;
       graphTooltip.classList.remove("is-visible");
       graphTooltip.textContent = "";
@@ -522,6 +743,7 @@
         hideGraphTooltip();
         return;
       }
+      tipAnchor = { el: anchorEl, text: body };
       graphTooltip.hidden = false;
       graphTooltip.textContent = body;
       graphTooltip.classList.add("is-visible");
@@ -540,33 +762,100 @@
       graphTooltip.style.top = top + "px";
     }
 
+    function resetCamera() {
+      camera = { k: 1, tx: 0, ty: 0 };
+      applyCamera();
+      syncBadgeVisibility();
+    }
+
+    function applyCamera() {
+      if (graphScene) {
+        graphScene.setAttribute(
+          "transform",
+          "translate(" + camera.tx + "," + camera.ty + ") scale(" + camera.k + ")"
+        );
+      }
+      syncBadgeVisibility();
+      if (tipAnchor && tipAnchor.el.isConnected) {
+        placeGraphTooltip(tipAnchor.el, tipAnchor.text);
+      }
+    }
+
+    function svgPointFromClient(clientX, clientY) {
+      const pt = graphEl.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const ctm = graphEl.getScreenCTM();
+      if (!ctm) return { x: 0, y: 0 };
+      return pt.matrixTransform(ctm.inverse());
+    }
+
+    function applyGraphSelection() {
+      if (!graphScene) {
+        renderGraph();
+        return;
+      }
+      let selectedDot = null;
+      let selectedFact = "";
+      let selectedGroup = null;
+      for (const group of graphScene.querySelectorAll(".node")) {
+        const id = group.getAttribute("data-id");
+        const selected = id === selectedId;
+        const active = !group.classList.contains("is-inactive");
+        group.setAttribute(
+          "class",
+          "node" + (active ? "" : " is-inactive") + (selected ? " is-selected" : "")
+        );
+        const circle = group.querySelector("circle.node-dot");
+        if (circle) circle.setAttribute("r", selected ? 7.5 : 5.5);
+        if (selected && circle) {
+          selectedDot = circle;
+          selectedFact = group.getAttribute("data-fact") || id;
+          selectedGroup = group;
+        }
+      }
+      if (selectedGroup) graphScene.append(selectedGroup);
+      if (selectedDot) placeGraphTooltip(selectedDot, selectedFact);
+      else hideGraphTooltip();
+    }
+
     function renderGraph() {
       hideGraphTooltip();
       graphEl.replaceChildren();
+      graphScene = null;
       const shown = (graph.nodes || []).filter(matches);
       if (!session.userId) {
-        legendEl.textContent = "Connect with a tenant to load the graph.";
+        setLegendMessage("Connect with a tenant to load the graph.");
         return;
       }
       if (loadError) {
-        legendEl.textContent = loadError;
+        setLegendMessage(loadError);
         return;
       }
       if (!(graph.nodes || []).length) {
-        legendEl.textContent = "No memories to draw for this tenant.";
+        setLegendMessage("No memories to draw for this tenant.");
         return;
       }
       if (!shown.length) {
-        legendEl.textContent = "No memories match these filters.";
+        setLegendMessage("No memories match these filters.");
         return;
       }
-      const width = Math.max(320, graphWrap.clientWidth || 640);
+      const width = Math.max(320, Math.round(graphWrap.clientWidth || 640));
       const height = 460;
       graphEl.setAttribute("viewBox", "0 0 " + width + " " + height);
       graphEl.setAttribute("height", String(height));
+      const bg = document.createElementNS(SVG_NS, "rect");
+      bg.setAttribute("class", "graph-bg");
+      bg.setAttribute("width", String(width));
+      bg.setAttribute("height", String(height));
+      bg.setAttribute("fill", "transparent");
+      graphScene = document.createElementNS(SVG_NS, "g");
+      graphScene.setAttribute("id", "graph-scene");
+      graphEl.append(bg, graphScene);
+      applyCamera();
       const visible = new Set(shown.map((node) => node.id));
       const edges = (graph.edges || []).filter((edge) => visible.has(edge.source) && visible.has(edge.target));
-      const { placed, links, byId } = layoutGraph(shown, edges, width, height);
+      const { placed, links, byId } = placeShown(shown, edges, width, height);
       for (const edge of links) {
         const source = byId.get(edge.source);
         const target = byId.get(edge.target);
@@ -576,16 +865,19 @@
         line.setAttribute("x2", target.x);
         line.setAttribute("y2", target.y);
         line.setAttribute("class", "edge-" + edge.kind);
-        graphEl.append(line);
+        graphScene.append(line);
       }
-      let selectedGroup = null;
+      let selectedDot = null;
       let selectedFact = "";
+      let selectedGroup = null;
       for (const node of placed) {
         const group = document.createElementNS(SVG_NS, "g");
         group.setAttribute("class", "node" + (node.active ? "" : " is-inactive") + (node.id === selectedId ? " is-selected" : ""));
         group.setAttribute("tabindex", "0");
         group.setAttribute("role", "button");
+        group.setAttribute("data-id", node.id);
         const fact = node.memory || node.id;
+        group.setAttribute("data-fact", fact);
         group.setAttribute("aria-label", fact + (node.active ? "" : ", replaced"));
         const badge = String(node.id || "").slice(-4) || "?";
         const selected = node.id === selectedId;
@@ -593,19 +885,19 @@
         hit.setAttribute("class", "node-hit");
         hit.setAttribute("cx", node.x);
         hit.setAttribute("cy", node.y);
-        hit.setAttribute("r", 14);
+        hit.setAttribute("r", 11);
         hit.setAttribute("fill", "transparent");
         const circle = document.createElementNS(SVG_NS, "circle");
         circle.setAttribute("class", "node-dot");
         circle.setAttribute("cx", node.x);
         circle.setAttribute("cy", node.y);
-        circle.setAttribute("r", selected ? 11 : 8);
+        circle.setAttribute("r", selected ? 7.5 : 5.5);
         circle.setAttribute("fill", domainColor(node.domain));
         const badgeText = document.createElementNS(SVG_NS, "text");
         badgeText.setAttribute("class", "node-badge");
         badgeText.setAttribute("text-anchor", "middle");
         badgeText.setAttribute("x", node.x);
-        badgeText.setAttribute("y", node.y + 20);
+        badgeText.setAttribute("y", node.y + 14);
         badgeText.textContent = badge;
         group.append(hit, circle, badgeText);
         const open = () => selectMemory(node.id);
@@ -627,20 +919,17 @@
             open();
           }
         });
-        graphEl.append(group);
+        graphScene.append(group);
         if (selected) {
-          selectedGroup = circle;
+          selectedDot = circle;
           selectedFact = fact;
+          selectedGroup = group;
         }
       }
-      if (selectedGroup) placeGraphTooltip(selectedGroup, selectedFact);
-      const kinds = new Set(links.map((edge) => edge.kind));
-      const parts = ["Color is domain (kind).", "Short code is the last 4 of the memory id.", "Hover a dot for the full fact."];
-      if (placed.some((node) => !node.active)) parts.push("Faded nodes are replaced.");
-      if (kinds.has("supersedes")) parts.push("Solid line replaces.");
-      if (kinds.has("facet")) parts.push("Dashed line shares an event.");
-      if (!kinds.size) parts.push("No replacement or shared-event links yet.");
-      legendEl.textContent = parts.join(" ");
+      if (selectedGroup) graphScene.append(selectedGroup);
+      if (selectedDot) placeGraphTooltip(selectedDot, selectedFact);
+      renderGraphLegend(placed, links);
+      syncBadgeVisibility();
     }
 
     function renderView() {
@@ -701,6 +990,24 @@
       return li;
     }
 
+    function clearDetailPlaceholder() {
+      detailEl.replaceChildren();
+      const note = document.createElement("p");
+      note.className = "empty";
+      note.textContent = "Select a memory to inspect scoring.";
+      detailEl.append(note);
+    }
+
+    function clearSelectionIfFilteredOut() {
+      if (!selectedId) return;
+      const item = (graph.nodes || []).find((node) => node.id === selectedId)
+        || memories.find((row) => row.id === selectedId);
+      if (item && matches(item)) return;
+      selectedId = "";
+      hideGraphTooltip();
+      clearDetailPlaceholder();
+    }
+
     function formatNumber(value) {
       if (typeof value !== "number" || Number.isNaN(value)) return "—";
       return String(Math.round(value * 10000) / 10000);
@@ -738,7 +1045,8 @@
 
     async function selectMemory(id) {
       selectedId = id;
-      renderView();
+      if (view === "graph") applyGraphSelection();
+      else renderList();
       setStatus("Loading inspect…");
       try {
         const info = await api(userPath() + "/memories/" + encodeURIComponent(id));
@@ -758,6 +1066,7 @@
       if (!session.userId) {
         memories = [];
         graph = { nodes: [], edges: [] };
+        invalidateLayoutCache();
         renderView();
         setStatus("Enter a tenant.", true);
         return;
@@ -770,6 +1079,7 @@
         memories = Array.isArray(listed) ? listed : [];
         graph = plotted && Array.isArray(plotted.nodes) ? plotted : { nodes: [], edges: [] };
         if (!Array.isArray(graph.edges)) graph.edges = [];
+        invalidateLayoutCache();
         fillDomains();
         renderView();
         const replaced = graph.nodes.filter((node) => !node.active).length;
@@ -781,15 +1091,12 @@
           await selectMemory(selectedId);
         } else if (selectedId) {
           selectedId = "";
-          detailEl.replaceChildren();
-          const note = document.createElement("p");
-          note.className = "empty";
-          note.textContent = "Select a memory to inspect scoring.";
-          detailEl.append(note);
+          clearDetailPlaceholder();
         }
       } catch (err) {
         memories = [];
         graph = { nodes: [], edges: [] };
+        invalidateLayoutCache();
         loadError = err.message || "Could not load memories.";
         renderView();
         setStatus(loadError, true);
@@ -804,23 +1111,101 @@
       };
       saveSession();
       selectedId = "";
+      resetCamera();
+      invalidateLayoutCache();
       loadMemories();
     });
 
-    document.getElementById("refresh").addEventListener("click", () => loadMemories());
-    textEl.addEventListener("input", renderView);
-    sourceEl.addEventListener("input", renderView);
-    domainEl.addEventListener("change", renderView);
+    document.getElementById("refresh").addEventListener("click", () => {
+      resetCamera();
+      invalidateLayoutCache();
+      loadMemories();
+    });
+    textEl.addEventListener("input", () => {
+      resetCamera();
+      invalidateLayoutCache();
+      clearSelectionIfFilteredOut();
+      renderView();
+    });
+    sourceEl.addEventListener("input", () => {
+      resetCamera();
+      invalidateLayoutCache();
+      clearSelectionIfFilteredOut();
+      renderView();
+    });
+    domainEl.addEventListener("change", () => {
+      resetCamera();
+      invalidateLayoutCache();
+      clearSelectionIfFilteredOut();
+      renderView();
+    });
     viewListBtn.addEventListener("click", () => {
       view = "list";
       renderView();
     });
     viewGraphBtn.addEventListener("click", () => {
       view = "graph";
+      resetCamera();
       renderView();
     });
+    graphBadgesBtn.addEventListener("click", () => {
+      badgesForced = !badgesForced;
+      syncBadgeVisibility();
+    });
+    graphResetBtn.addEventListener("click", () => {
+      resetCamera();
+    });
+    graphEl.addEventListener("wheel", (event) => {
+      if (view !== "graph" || !graphScene) return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const oldK = camera.k;
+      const newK = Math.min(CAMERA_MAX, Math.max(CAMERA_MIN, oldK * factor));
+      if (newK === oldK) return;
+      const p = svgPointFromClient(event.clientX, event.clientY);
+      camera.tx = p.x - (newK / oldK) * (p.x - camera.tx);
+      camera.ty = p.y - (newK / oldK) * (p.y - camera.ty);
+      camera.k = newK;
+      applyCamera();
+    }, { passive: false });
+    graphEl.addEventListener("pointerdown", (event) => {
+      if (view !== "graph" || !graphScene) return;
+      if (event.button !== 0) return;
+      if (event.target.closest && event.target.closest(".node")) return;
+      const start = svgPointFromClient(event.clientX, event.clientY);
+      panDrag = {
+        pointerId: event.pointerId,
+        startX: start.x,
+        startY: start.y,
+        tx: camera.tx,
+        ty: camera.ty,
+      };
+      graphEl.classList.add("is-panning");
+      graphEl.setPointerCapture(event.pointerId);
+    });
+    graphEl.addEventListener("pointermove", (event) => {
+      if (!panDrag || event.pointerId !== panDrag.pointerId) return;
+      const p = svgPointFromClient(event.clientX, event.clientY);
+      camera.tx = panDrag.tx + (p.x - panDrag.startX);
+      camera.ty = panDrag.ty + (p.y - panDrag.startY);
+      applyCamera();
+    });
+    function endPan(event) {
+      if (!panDrag || event.pointerId !== panDrag.pointerId) return;
+      panDrag = null;
+      graphEl.classList.remove("is-panning");
+      try {
+        graphEl.releasePointerCapture(event.pointerId);
+      } catch (_) { /* already released */ }
+    }
+    graphEl.addEventListener("pointerup", endPan);
+    graphEl.addEventListener("pointercancel", endPan);
     window.addEventListener("resize", () => {
-      if (view === "graph") renderGraph();
+      if (view === "graph") {
+        resetCamera();
+        invalidateLayoutCache();
+        renderGraph();
+      }
     });
 
     const stored = loadSession();

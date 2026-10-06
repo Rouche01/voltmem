@@ -13,10 +13,16 @@ todos:
     status: completed
   - id: zoom-pan
     content: "Add wheel zoom (toward pointer) and drag pan on the graph SVG via a transform group or viewBox. Background drag pans; node click still selects. Optional Reset view control. Bounds/min/max zoom so the graph cannot disappear."
-    status: pending
+    status: completed
+  - id: collision-separation
+    content: "Stop stacked dots: min-distance collision in layoutGraph, wider domain-home spiral, weaker home pull, soft walls + post-clamp separation passes. Clear inspect selection when filters hide the selected node."
+    status: completed
+  - id: legend-stable-badges
+    content: "Domain color legend + shown/domain counts; cache layout positions so selection does not reshuffle; short ids hidden until zoomed (k≥1.35) or Show ids toggle."
+    status: completed
   - id: verify-graph
-    content: "In the browser, open Graph for a tenant with many memories. Confirm short badges only by default; full text on hover/selection; clicks hit the intended dot; wheel zooms; drag pans; Reset returns to the default view."
-    status: pending
+    content: "In the browser, open Graph for a tenant with many memories. Confirm legend, stable selection, auto/toggle ids, tooltip, zoom, pan, Reset, no occlusion."
+    status: completed
 isProject: false
 ---
 
@@ -54,17 +60,33 @@ Done. Same file.
 
 ## Phase 2 — Zoom and pan
 
-Same file. Keep the force layout and canvas size as they are. Zoom and pan change how the drawn content is viewed.
+Done. Same file.
 
-- Wrap edges and nodes in an SVG group (e.g. `#graph-scene`) and apply `transform="translate(tx,ty) scale(k)"`, or update `viewBox`. Prefer a transform group so hit testing and `aria-label` stay on the same elements.
-- **Wheel** zooms toward the pointer. Clamp scale (e.g. 0.5–4).
-- **Drag on empty SVG space** pans. Node click still selects; do not start a pan when the pointer goes down on a `.node`.
-- **Reset view** control near the graph (or in the legend row) restores `k=1`, `tx=0`, `ty=0`.
-- Re-render after load/filter should keep or reset the camera deliberately: default to reset on each full `renderGraph()` so filters do not leave the user looking at empty space. Document that choice in a one-line comment next to the camera state.
-- Touch: optional. Mouse wheel + drag is enough for the laptop browser path. Skip pinch unless it is cheap.
-- After zoom/pan, reposition an open tooltip from the selected/hovered node's screen rect (same `placeGraphTooltip`).
+- Edges and nodes live in `#graph-scene` with `transform="translate(tx,ty) scale(k)"`. A fixed transparent `.graph-bg` rect (viewBox-sized, outside the scene) receives empty-space pans.
+- **Wheel** zooms toward the pointer. Scale clamped to 0.5–4.
+- **Drag on empty SVG space** pans. Pointer down on a `.node` does not start a pan; node click still selects.
+- **Reset view** button in `#graph-toolbar` restores `k=1`, `tx=0`, `ty=0`.
+- Camera resets on load, connect, refresh, filter change, resize, and opening Graph; **preserved** across selection redraws so zoom stays useful while inspecting. (Documented in a one-line comment next to the camera state.)
+- After zoom/pan, an open tooltip is repositioned from the anchor node's screen rect.
 
-Order: Phase 1 → 1b → 1c → 2.
+## Phase 2b — Collision separation
+
+Done. Same file (`layoutGraph`).
+
+- Minimum node distance (~42px) with hard separation passes during and after the force ticks.
+- Initial placement uses a golden-angle spiral per domain instead of a tight 16px ring.
+- Weaker domain-home pull; soft edge walls so clamp does not restack piles in the corners.
+- Changing text/domain/source filters clears the inspect panel when the selected memory no longer matches (avoids stale domain in the detail pane).
+
+## Phase 2c — Legend, stable selection, badge toggle
+
+Done. Same file.
+
+- Legend shows `N shown · D domains` plus a color swatch list mapping each kind.
+- Layout positions are cached by node/edge set + canvas size; selecting a node only updates highlight/tooltip (`applyGraphSelection`), no force re-run.
+- Short id badges are hidden by default; they appear when zoomed to ≥1.35× or when **Show ids** is pressed.
+
+Order: Phase 1 → 1b → 1c → 2 → 2b → 2c.
 
 ## Out of scope
 
@@ -80,5 +102,10 @@ Order: Phase 1 → 1b → 1c → 2.
 - [x] Each node shows a short id badge (last 4 of memory id); hit target is circle-sized
 - [x] Hovering / selecting / focusing a node shows the full fact in a fixed HTML tooltip above other dots and outside panel clip
 - [x] Clicking a clustered dot selects that node, not a neighbor
-- [ ] Wheel zooms toward the pointer; drag on empty space pans; node click still selects
-- [ ] Reset view restores the default camera
+- [x] Wheel zooms toward the pointer; drag on empty space pans; node click still selects
+- [x] Reset view restores the default camera
+- [x] Same-domain nodes stay separated under All kinds (no full stacks); zoom still available for dense tenants
+- [x] Domain color legend and shown/domain counts
+- [x] Selection does not reshuffle node positions
+- [x] Short ids appear on zoom or Show ids
+- [x] Browser smoke (`relay-local`, 80 nodes): legend + counts, stable selection, tooltip, Show ids / zoom badges, pan, Reset; no hard-overlapping dots
