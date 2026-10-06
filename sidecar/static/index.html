@@ -158,9 +158,38 @@
       font-size: 11px;
       fill: #1c1915;
       font-family: ui-sans-serif, "Segoe UI", sans-serif;
+      pointer-events: none;
     }
-    #graph .node.is-selected circle { stroke: #1c1915; stroke-width: 2.5; }
+    #graph .node .node-badge {
+      font-size: 9px;
+      fill: #5c564e;
+      opacity: 1;
+    }
+    #graph .node.is-selected circle.node-dot { stroke: #1c1915; stroke-width: 2.5; }
     #graph-legend { margin: 8px 4px 0; }
+
+    #graph-tooltip {
+      position: fixed;
+      z-index: 100;
+      max-width: min(360px, calc(100vw - 24px));
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf8;
+      color: var(--ink);
+      box-shadow: var(--shadow);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.08s ease;
+    }
+    #graph-tooltip.is-visible {
+      opacity: 1;
+      visibility: visible;
+    }
 
     .workspace {
       display: grid;
@@ -308,6 +337,7 @@
       </section>
     </div>
   </main>
+  <div id="graph-tooltip" role="tooltip" hidden></div>
   <script>
     const STORAGE_KEY = "voltmem.browser";
     const scoreFields = [
@@ -326,6 +356,7 @@
     const graphWrap = document.getElementById("graph-wrap");
     const graphEl = document.getElementById("graph");
     const legendEl = document.getElementById("graph-legend");
+    const graphTooltip = document.getElementById("graph-tooltip");
     const detailEl = document.getElementById("detail");
     const domainEl = document.getElementById("filter-domain");
     const textEl = document.getElementById("filter-text");
@@ -479,7 +510,38 @@
       return { placed, links, byId };
     }
 
+    function hideGraphTooltip() {
+      graphTooltip.hidden = true;
+      graphTooltip.classList.remove("is-visible");
+      graphTooltip.textContent = "";
+    }
+
+    function placeGraphTooltip(anchorEl, text) {
+      const body = String(text || "").trim();
+      if (!body || !anchorEl) {
+        hideGraphTooltip();
+        return;
+      }
+      graphTooltip.hidden = false;
+      graphTooltip.textContent = body;
+      graphTooltip.classList.add("is-visible");
+      graphTooltip.style.left = "0px";
+      graphTooltip.style.top = "0px";
+      const pad = 12;
+      const gap = 10;
+      const rect = anchorEl.getBoundingClientRect();
+      const tip = graphTooltip.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - tip.width / 2;
+      let top = rect.top - tip.height - gap;
+      if (top < pad) top = rect.bottom + gap;
+      left = Math.max(pad, Math.min(window.innerWidth - tip.width - pad, left));
+      top = Math.max(pad, Math.min(window.innerHeight - tip.height - pad, top));
+      graphTooltip.style.left = left + "px";
+      graphTooltip.style.top = top + "px";
+    }
+
     function renderGraph() {
+      hideGraphTooltip();
       graphEl.replaceChildren();
       const shown = (graph.nodes || []).filter(matches);
       if (!session.userId) {
@@ -516,34 +578,49 @@
         line.setAttribute("class", "edge-" + edge.kind);
         graphEl.append(line);
       }
+      let selectedGroup = null;
+      let selectedFact = "";
       for (const node of placed) {
         const group = document.createElementNS(SVG_NS, "g");
         group.setAttribute("class", "node" + (node.active ? "" : " is-inactive") + (node.id === selectedId ? " is-selected" : ""));
         group.setAttribute("tabindex", "0");
         group.setAttribute("role", "button");
-        group.setAttribute("aria-label", (node.memory || node.id) + (node.active ? "" : ", replaced"));
-        const text = node.memory || "";
-        const shownText = text.length > 42 ? text.slice(0, 41) + "…" : text;
-        const hit = document.createElementNS(SVG_NS, "rect");
-        const hitWidth = Math.min(180, Math.max(56, shownText.length * 6.4));
-        hit.setAttribute("x", node.x - hitWidth / 2);
-        hit.setAttribute("y", node.y - 16);
-        hit.setAttribute("width", hitWidth);
-        hit.setAttribute("height", 44);
+        const fact = node.memory || node.id;
+        group.setAttribute("aria-label", fact + (node.active ? "" : ", replaced"));
+        const badge = String(node.id || "").slice(-4) || "?";
+        const selected = node.id === selectedId;
+        const hit = document.createElementNS(SVG_NS, "circle");
+        hit.setAttribute("class", "node-hit");
+        hit.setAttribute("cx", node.x);
+        hit.setAttribute("cy", node.y);
+        hit.setAttribute("r", 14);
         hit.setAttribute("fill", "transparent");
         const circle = document.createElementNS(SVG_NS, "circle");
+        circle.setAttribute("class", "node-dot");
         circle.setAttribute("cx", node.x);
         circle.setAttribute("cy", node.y);
-        circle.setAttribute("r", node.id === selectedId ? 11 : 8);
+        circle.setAttribute("r", selected ? 11 : 8);
         circle.setAttribute("fill", domainColor(node.domain));
-        const label = document.createElementNS(SVG_NS, "text");
-        label.setAttribute("text-anchor", "middle");
-        label.setAttribute("x", node.x);
-        label.setAttribute("y", node.y + 22);
-        label.textContent = shownText;
-        group.append(hit, circle, label);
+        const badgeText = document.createElementNS(SVG_NS, "text");
+        badgeText.setAttribute("class", "node-badge");
+        badgeText.setAttribute("text-anchor", "middle");
+        badgeText.setAttribute("x", node.x);
+        badgeText.setAttribute("y", node.y + 20);
+        badgeText.textContent = badge;
+        group.append(hit, circle, badgeText);
         const open = () => selectMemory(node.id);
+        const showTip = () => placeGraphTooltip(circle, fact);
         group.addEventListener("click", open);
+        group.addEventListener("mouseenter", showTip);
+        group.addEventListener("mouseleave", () => {
+          if (node.id === selectedId) placeGraphTooltip(circle, fact);
+          else hideGraphTooltip();
+        });
+        group.addEventListener("focus", showTip);
+        group.addEventListener("blur", () => {
+          if (node.id === selectedId) placeGraphTooltip(circle, fact);
+          else hideGraphTooltip();
+        });
         group.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -551,9 +628,14 @@
           }
         });
         graphEl.append(group);
+        if (selected) {
+          selectedGroup = circle;
+          selectedFact = fact;
+        }
       }
+      if (selectedGroup) placeGraphTooltip(selectedGroup, selectedFact);
       const kinds = new Set(links.map((edge) => edge.kind));
-      const parts = ["Color is domain (kind)."];
+      const parts = ["Color is domain (kind).", "Short code is the last 4 of the memory id.", "Hover a dot for the full fact."];
       if (placed.some((node) => !node.active)) parts.push("Faded nodes are replaced.");
       if (kinds.has("supersedes")) parts.push("Solid line replaces.");
       if (kinds.has("facet")) parts.push("Dashed line shares an event.");
@@ -568,7 +650,10 @@
       viewListBtn.setAttribute("aria-pressed", graphMode ? "false" : "true");
       viewGraphBtn.setAttribute("aria-pressed", graphMode ? "true" : "false");
       if (graphMode) renderGraph();
-      else renderList();
+      else {
+        hideGraphTooltip();
+        renderList();
+      }
     }
 
     function renderList() {

@@ -20,6 +20,12 @@ todos:
   - id: docs-smoke
     content: Document /ui + /graph in sidecar/README.md and docs/SIDECAR.md; one curl + browser smoke for local Docker
     status: completed
+  - id: clear-tenant-ui
+    content: "Later: memory browser Clear tenant — wire existing DELETE /v1/tenants/{id}/memories with typed confirm (tenant id). Refresh list/graph after success. Not one-click; not on the graph canvas."
+    status: pending
+  - id: clear-domain-api-ui
+    content: "Later: domain-scoped clear — add engine/HTTP support (e.g. DELETE .../memories?domain=…), TS client if needed, then browser Clear domain for the active domain filter with typed confirm. Docs + sidecar tests."
+    status: pending
 isProject: true
 ---
 
@@ -170,7 +176,7 @@ Wire in `[sidecar/app.py](../../sidecar/app.py)` with `StaticFiles` (or a single
 | Detail        | `GET .../memories/{id}` — volatility, protection, staleness, surprise, mismatch, age (`[inspect](../../voltmem/memory.py)`) |
 
 
-Actions (optional v1.1, mark pending if timeboxed): delete one memory (existing DELETE). Do not ship clear-all in the UI without a typed confirm.
+Actions (optional v1.1, mark pending if timeboxed): delete one memory (existing DELETE). Bulk clear is Phase 5 — do not ship without a typed confirm.
 
 ## Phase 4 — Graph view
 
@@ -199,6 +205,32 @@ open http://127.0.0.1:8080/ui
 curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq '.nodes | length'
 ```
 
+## Phase 5 — Destructive clear (later)
+
+Operator affordance for dogfood tenants (`relay-local`, draft CE data). **Not** part of graph readability work; do after hover labels / zoom settle. Related readability plan: [`graph_hover_labels.plan.md`](./graph_hover_labels.plan.md).
+
+### Why
+
+- **Tenant clear** — API already exists (`DELETE /v1/tenants/{tenant_id}/memories`, TS `clear()`). Browser gap only. Useful when iterating dirty local DBs.
+- **Domain clear** — more useful than a full wipe when one kind is polluted (bad classification / wrong profile). Needs new engine + HTTP support; none today.
+
+### UX
+
+- Toolbar / settings (not the graph canvas). Never one-click.
+- **Clear tenant** — type the current tenant id to confirm; then call existing clear; refresh list + graph; clear selection.
+- **Clear domain** — only when a domain filter is set (or an explicit domain picker); type domain name (or tenant id + domain) to confirm; refresh.
+
+### API (domain)
+
+- Prefer extending clear: `DELETE /v1/tenants/{tenant_id}/memories?domain={name}` (omit `domain` = full tenant clear, current behavior).
+- Store/Memory: delete rows for namespace + domain; clean related vector / domain-stats / mismatch evidence the same way full `clear()` does for a namespace.
+- Tests in `tests/test_sidecar.py` (and store if needed). Update sidecar README + TS client when the query param ships.
+
+### Order
+
+1. `clear-tenant-ui` (wire existing API)
+2. `clear-domain-api-ui` (engine → HTTP → client → UI)
+
 ## Dogfood consumers
 
 
@@ -222,6 +254,8 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 - [x] `/ui` loads against local sidecar; list + inspect work with Relay’s user id
 - [x] Graph view renders replacement chain when a test/fixture supersedes a fact
 - [x] SIDECAR + sidecar README document how to open the browser
+- [ ] Browser can clear a whole tenant with typed confirm (existing API)
+- [ ] Domain-scoped clear exists in HTTP + browser with typed confirm
 
 ## Suggested order of work
 
@@ -229,6 +263,7 @@ curl -s "$BASE/v1/users/relay-local/graph" -H "X-API-Key: $VOLTMEM_API_KEY" | jq
 2. `static-ui-shell` + `list-inspect`
 3. `graph-view`
 4. `docs-smoke`
+5. Later: `clear-tenant-ui`, then `clear-domain-api-ui`
 
 ## Handoff notes
 
