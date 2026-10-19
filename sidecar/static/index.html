@@ -348,6 +348,7 @@
       border-radius: 12px;
       box-shadow: var(--shadow);
       min-height: 420px;
+      min-width: 0;
       padding: 12px;
     }
 
@@ -357,6 +358,11 @@
       padding: 0;
       display: grid;
       gap: 8px;
+      min-width: 0;
+    }
+
+    #list > li {
+      min-width: 0;
     }
 
     #list[hidden],
@@ -398,10 +404,13 @@
       cursor: not-allowed;
     }
 
+    /* Buttons default to nowrap / min-content width — long URLs blow the card out. */
     .row {
+      box-sizing: border-box;
       width: 100%;
-      display: grid;
-      gap: 4px;
+      max-width: 100%;
+      min-width: 0;
+      display: block;
       padding: 10px 12px;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -409,11 +418,29 @@
       color: inherit;
       text-align: left;
       cursor: pointer;
+      white-space: normal;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .row.is-selected {
       border-color: var(--accent);
       background: var(--accent-soft);
+    }
+
+    .row .memory,
+    .row .meta {
+      display: block;
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .row .memory + .meta {
+      margin-top: 4px;
     }
 
     .row .memory {
@@ -429,6 +456,7 @@
       margin: 4px 0 12px;
       font-size: 1.15rem;
       line-height: 1.35;
+      overflow-wrap: anywhere;
     }
 
     #scores {
