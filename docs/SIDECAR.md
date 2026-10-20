@@ -223,7 +223,8 @@ Full route table: [sidecar/README.md](../sidecar/README.md).
 ## Publishing the image (maintainers)
 
 CI workflow [`.github/workflows/publish-sidecar.yml`](../.github/workflows/publish-sidecar.yml)
-builds both Dockerfile variants and pushes to `ghcr.io/rouche01/voltmem-sidecar`.
+builds both Dockerfile variants for `linux/amd64` and `linux/arm64` and pushes
+multi-arch manifests to `ghcr.io/rouche01/voltmem-sidecar`.
 
 Triggers: tags matching `sidecar-v*` (e.g. `sidecar-v0.6.0`) and manual
 `workflow_dispatch`. A version tag pushes `:VERSION` and `:latest` (embeddings)

@@ -110,7 +110,7 @@ Same idea on npm for `@voltmem/client`: workflow `publish-npm.yml`, environment 
 - `1` (default): sentence-transformers, tag `:latest` / version pin
 - `0`: hashing scorer, tag `:slim` / `:<version>-slim`
 
-Publish workflow: `.github/workflows/publish-sidecar.yml`, on tags `sidecar-v*`. `GET /health` and `GET /ui` stay unauthenticated. `/v1/*` requires `X-API-Key` when `VOLTMEM_API_KEY` is set.
+Publish workflow: `.github/workflows/publish-sidecar.yml`, on tags `sidecar-v*` — multi-arch (`linux/amd64`, `linux/arm64`). `GET /health` and `GET /ui` stay unauthenticated. `/v1/*` requires `X-API-Key` when `VOLTMEM_API_KEY` is set.
 
 ## When you change something
 
