@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        profile = os.environ.get("VOLTMEM_PROFILE", "stylens").strip() or "stylens"
+        profile = os.environ.get("VOLTMEM_PROFILE", "default").strip() or "default"
         domains, classifier = build_profile(profile)
         domains_file = os.environ.get("VOLTMEM_DOMAINS_FILE", "").strip()
         if domains_file:

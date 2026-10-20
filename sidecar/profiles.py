@@ -1,8 +1,8 @@
 """Domain profiles installed when the sidecar process starts.
 
-``VOLTMEM_PROFILE`` selects the built-in registry (default ``stylens``).
-``VOLTMEM_DOMAINS_FILE`` merges extra domains and keyword hints from JSON
-so an app can define its own kinds without a code profile.
+``VOLTMEM_PROFILE`` selects the built-in registry (default ``default``).
+``default`` is the library priors plus ``HeuristicClassifier`` — no app
+vocabulary. Apps define their own kinds with ``VOLTMEM_DOMAINS_FILE``.
 """
 
 from __future__ import annotations
@@ -19,50 +19,22 @@ from voltmem import (
 from voltmem.classifiers import Classifier
 
 
-def stylens_domains() -> DomainRegistry:
-    """Stable fit/color prefs vs volatile occasion — dogfood priors."""
-    domains = DomainRegistry()
-    domains.register("style_preference", 0.08)
-    domains.register("style_constraint", 0.25)
-    domains.register("session_occasion", 0.80, slot=True)
-    return domains
+def default_domains() -> DomainRegistry:
+    """No extra kinds — library ``DOMAIN_VOLATILITY`` priors only."""
+    return DomainRegistry()
 
 
-def stylens_classifier() -> Classifier:
-    return ChainedClassifier(
-        [
-            KeywordClassifier(
-                {
-                    "style_preference": [
-                        "prefer",
-                        "darker colors",
-                        "minimal",
-                        "loose fits",
-                    ],
-                    "style_constraint": [
-                        "no wool",
-                        "tight budget",
-                        "must be formal",
-                    ],
-                    "session_occasion": [
-                        "wedding",
-                        "job interview",
-                        "date night",
-                    ],
-                }
-            ),
-            HeuristicClassifier(),
-        ]
-    )
+def default_classifier() -> Classifier:
+    return HeuristicClassifier()
 
 
 _PROFILES = {
-    "stylens": (stylens_domains, stylens_classifier),
+    "default": (default_domains, default_classifier),
 }
 
 
-def build_profile(name: str = "stylens") -> tuple[DomainRegistry, Classifier]:
-    key = (name or "stylens").strip().lower()
+def build_profile(name: str = "default") -> tuple[DomainRegistry, Classifier]:
+    key = (name or "default").strip().lower()
     builders = _PROFILES.get(key)
     if builders is None:
         known = ", ".join(sorted(_PROFILES))

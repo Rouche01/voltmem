@@ -29,7 +29,7 @@ You choose who runs the sidecar:
 
 | Model | Who runs it | Typical use |
 |---|---|---|
-| Self-host | Each team deploys their own container | Product apps (e.g. stylens) |
+| Self-host | Each team deploys their own container | Product apps |
 | Shared service | You host one multi-tenant URL | SaaS / demos |
 | Local | Developer laptop | Integration tests |
 
@@ -40,9 +40,9 @@ You choose who runs the sidecar:
 | Concept | Role | Example |
 |---|---|---|
 | **Tenant** | Isolation boundary: one logical database inside the shared SQLite file. A person or an app bucket. | `alice`, `relay-local` |
-| **Domain** | Fact kind plus a volatility prior. A partition inside a tenant. | `style_preference` |
+| **Domain** | Fact kind plus a volatility prior. A partition inside a tenant. | `stated_preference` |
 | **Memory item** | One stored fact. | “I prefer darker colors and minimal fits” |
-| **Profile** | Built-in registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `stylens` |
+| **Profile** | Built-in registry and classifier loaded when the sidecar process starts (`VOLTMEM_PROFILE`). | `default` |
 
 The tenant id is what you pass as Python `user_id` and as the HTTP path segment `/v1/tenants/{tenant_id}`. SQLite stores that id in the `namespace` column. Call it a **tenant** in docs and in the memory browser. `/v1/users/{tenant_id}/…` is the same handlers, marked deprecated in OpenAPI, so older clients keep working.
 
@@ -52,7 +52,7 @@ Tenant is the database. Domain is a typed partition inside it. Both live in the 
 
 ### Extra domains
 
-`VOLTMEM_PROFILE` still picks the built-in registry. The default is `stylens`. App-specific kinds do not belong in that code. Point `VOLTMEM_DOMAINS_FILE` at a JSON file and the sidecar merges it in before serving traffic:
+`VOLTMEM_PROFILE` picks the built-in registry. The default is `default` (library priors + heuristic classifier). App-specific kinds do not belong in library code — point `VOLTMEM_DOMAINS_FILE` at a JSON file and the sidecar merges it in before serving traffic:
 
 ```json
 {

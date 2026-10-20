@@ -6,17 +6,17 @@ or [`@voltmem/client`](../clients/typescript).
 
 **Deploy guide (start here):** [docs/SIDECAR.md](../docs/SIDECAR.md)
 
-Default domain profile: **stylens** (stable style prefs vs volatile occasion) —
-same priors as [`examples/custom_classifier.py`](../examples/custom_classifier.py).
+Default domain profile: **default** (library `DOMAIN_VOLATILITY` priors +
+heuristic classifier). App vocabulary belongs in `VOLTMEM_DOMAINS_FILE`.
 
 ## Concepts
 
 | Concept | Role | Example |
 |---|---|---|
 | **Tenant** | Isolation boundary (person or app bucket). Stored as SQLite `namespace`. | `relay-local`, `alice` |
-| **Domain** | Fact kind plus a volatility prior, inside one tenant. | `style_preference` |
+| **Domain** | Fact kind plus a volatility prior, inside one tenant. | `stated_preference` |
 | **Memory item** | One stored fact. | approve/abort outcome text |
-| **Profile** | Built-in registry and classifier (`VOLTMEM_PROFILE`). Extra kinds come from `VOLTMEM_DOMAINS_FILE`. | `stylens` |
+| **Profile** | Built-in registry and classifier (`VOLTMEM_PROFILE`). Extra kinds come from `VOLTMEM_DOMAINS_FILE`. | `default` |
 
 HTTP addresses a tenant as `/v1/tenants/{tenant_id}`. `/v1/users/{tenant_id}/…` is the same handlers, marked deprecated. The profile classifier assigns `domain` on write. Full glossary: [docs/SIDECAR.md](../docs/SIDECAR.md#concepts).
 
@@ -68,7 +68,7 @@ python -m sidecar
 | `VOLTMEM_DB_PATH` | `voltmem_sidecar.db` | SQLite path (use `/data/voltmem.db` in Docker). File DBs use WAL automatically. |
 | `VOLTMEM_EMBEDDINGS` | `1` (truthy) | `0`/`false` disables embedder (hashing fallback) |
 | `VOLTMEM_API_KEY` | _(empty)_ | When set, require matching `X-API-Key` on `/v1/*` |
-| `VOLTMEM_PROFILE` | `stylens` | Built-in domain registry and classifier. One process, one profile. |
+| `VOLTMEM_PROFILE` | `default` | Built-in domain registry and classifier. One process, one profile. App kinds via `VOLTMEM_DOMAINS_FILE`. |
 | `VOLTMEM_DOMAINS_FILE` | _(unset)_ | JSON file merged at startup: `domains` (`name`, `volatility`, optional `slot`) and optional `keywords`. Keyword hints run before the profile classifier. |
 | `VOLTMEM_MAINTENANCE` | `1` | Background daemon for due tasks (`0` to disable) |
 | `VOLTMEM_MAINTENANCE_CHECK_INTERVAL` | `60` | Seconds between daemon ticks |
@@ -140,7 +140,7 @@ curl -s -X POST "http://127.0.0.1:8080/v1/tenants/alice/memories" \
 
 Body: `{ "data": <string | message | messages>, "source"?: "...", "extract"?: bool, "domain"?: "..." }`.
 
-`domain`, when set, is the fact kind and skips the profile classifier. The same phrase that classifies as `style_preference` stays `community_outcome` if the body says so. Event facets already carry their own `domain` on `POST .../events`.
+`domain`, when set, is the fact kind and skips the profile classifier. The same phrase that would classify as `stated_preference` stays `community_outcome` if the body says so. Event facets already carry their own `domain` on `POST .../events`.
 
 ### Search
 

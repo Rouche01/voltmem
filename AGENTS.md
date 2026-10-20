@@ -99,7 +99,7 @@ Same idea on npm for `@voltmem/client`: workflow `publish-npm.yml`, environment 
 - **Default law is composite.** `"homeostatic"` and `"current"` stay available. Do not silently change the default.
 - **False merge is worse than a missed link.** Grey frames insert as twins. Live `add()` / `remember()` stay on the heuristic path unless `verify_on_write=True` or `VOLTMEM_VERIFY_ON_WRITE=1`. Twin cleanup is sleeptime `reconcile_twins`.
 - **Tenant is the isolation boundary.** Python `user_id` and HTTP `{tenant_id}` are the same id, stored as SQLite `namespace`. A domain is a fact kind plus a volatility prior inside one tenant. Say tenant in docs and the memory browser. `/v1/users/{id}` is a deprecated alias of `/v1/tenants/{id}`.
-- **One sidecar process, one profile.** `VOLTMEM_PROFILE` (default `stylens`) plus optional `VOLTMEM_DOMAINS_FILE`. App-specific domains do not get hardcoded into the stylens profile.
+- **One sidecar process, one profile.** `VOLTMEM_PROFILE` (default `default`: library priors + heuristic classifier) plus optional `VOLTMEM_DOMAINS_FILE`. App-specific domains belong in the domains file, not in library code.
 - **Search is not raw ANN.** Vector candidates are re-ranked with volatility. Keyword-only mode uses the threshold ladder and can false-merge. The shipped claim is embeddings plus sidecar sleeptime.
 - **File databases use WAL.** HTTP and the maintenance daemon share one SQLite file. Do not open it in a mode that breaks that.
 

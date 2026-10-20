@@ -63,12 +63,12 @@ def test_callable_classifier_dict():
         embeddings=False,
         classifier={
             "classify": lambda t: "custom_domain"
-            if "stylens" in t.lower() else "stated_preference",
+            if "acme" in t.lower() else "stated_preference",
             "mismatch": lambda n, e, s: 0.05 if s > 0.8 else 0.7,
         },
         domains=DomainRegistry().register("custom_domain", 0.4),
     ) as mem:
-        row = mem.add("stylens user prefers navy")
+        row = mem.add("acme user prefers navy")
         assert row["domain"] == "custom_domain"
 
 

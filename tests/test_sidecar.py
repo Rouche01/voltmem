@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 # Embeddings off for CI-fast runs (must be set before app lifespan).
 os.environ["VOLTMEM_EMBEDDINGS"] = "0"
 os.environ["VOLTMEM_MAINTENANCE"] = "0"
-os.environ.setdefault("VOLTMEM_PROFILE", "stylens")
+os.environ.setdefault("VOLTMEM_PROFILE", "default")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -28,6 +28,8 @@ def _client(**env: str) -> TestClient:
         os.environ.pop("VOLTMEM_API_KEY", None)
     if "VOLTMEM_DOMAINS_FILE" not in env:
         os.environ.pop("VOLTMEM_DOMAINS_FILE", None)
+    if "VOLTMEM_PROFILE" not in env:
+        os.environ["VOLTMEM_PROFILE"] = "default"
     for key, value in env.items():
         os.environ[key] = value
     os.environ["VOLTMEM_EMBEDDINGS"] = "0"
@@ -50,12 +52,12 @@ def test_add_search_domain_stats_delete():
         assert add.status_code == 200, add.text
         body = add.json()
         assert body["action"] == "inserted"
-        assert body["domain"] == "style_preference"
+        assert body["domain"] == "core_preference"
         mid = body["id"]
 
         search = client.get(
             "/v1/users/alice/memories/search",
-            params={"q": "style preferences colors", "limit": 3},
+            params={"q": "prefer darker colors minimal", "limit": 3},
         )
         assert search.status_code == 200
         hits = search.json()
@@ -63,7 +65,7 @@ def test_add_search_domain_stats_delete():
 
         stats = client.get("/v1/users/alice/domain_stats")
         assert stats.status_code == 200
-        assert "style_preference" in stats.json()
+        assert "core_preference" in stats.json()
 
         got = client.get(f"/v1/users/alice/memories/{mid}")
         assert got.status_code == 200
@@ -78,7 +80,7 @@ def test_add_search_domain_stats_delete():
 
 
 def test_add_domain_skips_classifier():
-    """A write-supplied domain is stored even when the text would classify as style."""
+    """A write-supplied domain is stored even when the text would classify differently."""
     with _client(VOLTMEM_DB_PATH=":memory:") as client:
         add = client.post(
             "/v1/users/alice/memories",
@@ -101,6 +103,15 @@ def test_add_domain_skips_classifier():
         assert [node["domain"] for node in nodes] == ["community_outcome"]
 
 
+def test_unknown_profile_rejected():
+    try:
+        build_profile("not-a-profile")
+    except ValueError as exc:
+        assert "not-a-profile" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_domains_file_merges_kinds_and_searches():
     spec = {
         "domains": [
@@ -116,13 +127,11 @@ def test_domains_file_merges_kinds_and_searches():
     os.close(fd)
     Path(path).write_text(json.dumps(spec), encoding="utf-8")
     try:
-        domains, classifier = apply_domains_file(*build_profile("stylens"), path)
+        domains, classifier = apply_domains_file(*build_profile("default"), path)
         assert domains.volatility("community_outcome") == 0.55
-        assert domains.volatility("style_preference") == 0.08
         restore = domains.install()
         try:
             assert classifier.classify_domain("[outcome] aborted the post") == "community_outcome"
-            assert classifier.classify_domain("I prefer darker colors") == "style_preference"
         finally:
             restore()
 
@@ -163,7 +172,7 @@ def test_domains_file_rejects_unregistered_keyword():
     )
     try:
         try:
-            apply_domains_file(*build_profile("stylens"), path)
+            apply_domains_file(*build_profile("default"), path)
         except ValueError as exc:
             assert "community_outcome" in str(exc)
         else:
@@ -225,7 +234,7 @@ def test_api_key_required_when_set():
                 headers={"X-API-Key": "test-secret"},
             )
             assert ok.status_code == 200, ok.text
-            assert ok.json()["domain"] == "style_preference"
+            assert ok.json()["domain"] == "core_preference"
     finally:
         if previous is None:
             os.environ.pop("VOLTMEM_API_KEY", None)
@@ -252,11 +261,11 @@ def test_clear_domain_keeps_other_kinds():
     with _client(VOLTMEM_DB_PATH=":memory:") as client:
         a = client.post(
             "/v1/tenants/domain-clear/memories",
-            json={"data": "I prefer navy linen", "domain": "style_preference"},
+            json={"data": "I prefer navy linen", "domain": "core_preference"},
         )
         b = client.post(
             "/v1/tenants/domain-clear/memories",
-            json={"data": "Dressing for a beach wedding", "domain": "session_occasion"},
+            json={"data": "Working on the launch checklist", "domain": "current_task"},
         )
         assert a.status_code == 200, a.text
         assert b.status_code == 200, b.text
@@ -265,31 +274,49 @@ def test_clear_domain_keeps_other_kinds():
         assert bad.status_code == 400
 
         cleared = client.delete(
-            "/v1/tenants/domain-clear/memories?domain=style_preference"
+            "/v1/tenants/domain-clear/memories?domain=core_preference"
         )
         assert cleared.status_code == 200, cleared.text
         body = cleared.json()
         assert body["cleared"] is True
-        assert body["domain"] == "style_preference"
+        assert body["domain"] == "core_preference"
 
         remaining = client.get("/v1/tenants/domain-clear/memories").json()
         assert len(remaining) == 1
-        assert remaining[0]["domain"] == "session_occasion"
+        assert remaining[0]["domain"] == "current_task"
         assert remaining[0]["id"] == b.json()["id"]
 
         graph = client.get("/v1/tenants/domain-clear/graph").json()
         assert len(graph["nodes"]) == 1
-        assert graph["nodes"][0]["domain"] == "session_occasion"
+        assert graph["nodes"][0]["domain"] == "current_task"
 
 
-def test_occasion_domain():
-    with _client(VOLTMEM_DB_PATH=":memory:") as client:
-        r = client.post(
-            "/v1/users/dave/memories",
-            json={"data": "I'm dressing for a summer wedding"},
-        )
-        assert r.status_code == 200
-        assert r.json()["domain"] == "session_occasion"
+def test_domains_file_keyword_slot_kind():
+    spec = {
+        "domains": [
+            {"name": "session_occasion", "volatility": 0.80, "slot": True},
+        ],
+        "keywords": {
+            "session_occasion": ["wedding", "job interview", "date night"],
+        },
+    }
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    Path(path).write_text(json.dumps(spec), encoding="utf-8")
+    try:
+        with _client(
+            VOLTMEM_DB_PATH=":memory:",
+            VOLTMEM_DOMAINS_FILE=path,
+        ) as client:
+            r = client.post(
+                "/v1/users/dave/memories",
+                json={"data": "I'm dressing for a summer wedding"},
+            )
+            assert r.status_code == 200
+            assert r.json()["domain"] == "session_occasion"
+    finally:
+        os.environ.pop("VOLTMEM_DOMAINS_FILE", None)
+        os.remove(path)
 
 
 def test_maintenance_dry_run_gates_expire_cleanup():
@@ -355,17 +382,17 @@ def test_store_list_all_includes_superseded_rows():
     store = MemoryStore(":memory:")
     try:
         store.insert(MemoryItem(
-            id="a", content="old", domain="session_occasion",
+            id="a", content="old", domain="current_task",
             source="explicit_statement", namespace="alice",
             created_at=1.0, last_confirmed_at=1.0, superseded_by="b",
         ))
         store.insert(MemoryItem(
-            id="b", content="new", domain="session_occasion",
+            id="b", content="new", domain="current_task",
             source="explicit_statement", namespace="alice",
             created_at=2.0, last_confirmed_at=2.0,
         ))
         store.insert(MemoryItem(
-            id="c", content="other tenant", domain="session_occasion",
+            id="c", content="other tenant", domain="current_task",
             source="explicit_statement", namespace="bob",
             created_at=3.0, last_confirmed_at=3.0,
         ))
@@ -435,9 +462,9 @@ def test_graph_facet_edges_are_a_star():
             json={
                 "event_id": "look-1",
                 "facets": [
-                    {"content": "navy suit", "domain": "style_preference"},
-                    {"content": "wedding", "domain": "session_occasion"},
-                    {"content": "no wool", "domain": "style_constraint"},
+                    {"content": "navy suit", "domain": "core_preference"},
+                    {"content": "wedding Friday", "domain": "current_task"},
+                    {"content": "no wool", "domain": "stated_preference"},
                 ],
             },
         )
@@ -531,13 +558,14 @@ if __name__ == "__main__":
         test_health,
         test_add_search_domain_stats_delete,
         test_add_domain_skips_classifier,
+        test_unknown_profile_rejected,
         test_domains_file_merges_kinds_and_searches,
         test_domains_file_rejects_unregistered_keyword,
         test_namespace_isolation,
         test_api_key_required_when_set,
         test_clear_and_summary,
         test_clear_domain_keeps_other_kinds,
-        test_occasion_domain,
+        test_domains_file_keyword_slot_kind,
         test_maintenance_dry_run_gates_expire_cleanup,
         test_store_list_all_includes_superseded_rows,
         test_graph_supersedes_keeps_list_active_only,

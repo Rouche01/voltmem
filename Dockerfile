@@ -28,7 +28,7 @@ RUN set -eu; \
 
 ENV VOLTMEM_DB_PATH=/data/voltmem.db \
     VOLTMEM_EMBEDDINGS=${EMBEDDINGS} \
-    VOLTMEM_PROFILE=stylens \
+    VOLTMEM_PROFILE=default \
     HOST=0.0.0.0 \
     PORT=8080 \
     PYTHONUNBUFFERED=1

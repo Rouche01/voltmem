@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 os.environ["VOLTMEM_EMBEDDINGS"] = "0"
 os.environ["VOLTMEM_MAINTENANCE"] = "0"
-os.environ.setdefault("VOLTMEM_PROFILE", "stylens")
+os.environ.setdefault("VOLTMEM_PROFILE", "default")
 
 from sidecar.maintenance_scheduler import SidecarMaintenanceScheduler  # noqa: E402
 from sidecar.memory_pool import MemoryPool  # noqa: E402
@@ -20,7 +20,7 @@ from sidecar.profiles import build_profile  # noqa: E402
 
 
 def test_scheduler_tick_runs_expire_cleanup_off_request_path():
-    domains, classifier = build_profile("stylens")
+    domains, classifier = build_profile("default")
     restore = domains.install()
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -68,7 +68,7 @@ def test_list_namespaces_excludes_sidecar():
 
 
 def test_scheduler_registers_consolidate_by_default():
-    domains, classifier = build_profile("stylens")
+    domains, classifier = build_profile("default")
     restore = domains.install()
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -99,7 +99,7 @@ def test_scheduler_registers_consolidate_by_default():
 
 
 def test_scheduler_can_disable_consolidate():
-    domains, classifier = build_profile("stylens")
+    domains, classifier = build_profile("default")
     restore = domains.install()
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -122,7 +122,7 @@ def test_scheduler_can_disable_consolidate():
 
 
 def test_scheduler_registers_reconcile_twins_by_default():
-    domains, classifier = build_profile("stylens")
+    domains, classifier = build_profile("default")
     restore = domains.install()
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -153,7 +153,7 @@ def test_scheduler_registers_reconcile_twins_by_default():
 
 
 def test_scheduler_can_disable_reconcile_twins():
-    domains, classifier = build_profile("stylens")
+    domains, classifier = build_profile("default")
     restore = domains.install()
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
