@@ -112,8 +112,9 @@ The Dockerfile lives at the root of
 git clone https://github.com/Rouche01/voltmem.git
 cd voltmem
 
-# Full image (default): sentence-transformers, VOLTMEM_EMBEDDINGS=1
+# Full image (default): sentence-transformers + CPU PyTorch, VOLTMEM_EMBEDDINGS=1
 docker build -t voltmem-sidecar .
+
 
 # Slim image: hashing scorer, VOLTMEM_EMBEDDINGS=0
 docker build --build-arg EMBEDDINGS=0 -t voltmem-sidecar:slim .

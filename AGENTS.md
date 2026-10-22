@@ -18,7 +18,7 @@ Version in `pyproject.toml` is the library version. `@voltmem/client` and the si
 | `tests/` | Standalone scripts. Run with `python tests/<file>.py`. |
 | `experiments/` | Benchmarks and research scripts. Not the default test suite. |
 | `examples/` | Demos, including `examples/chat_app`. |
-| `docs/` | Deploy, research, open problems. Start at `docs/SIDECAR.md` and `docs/RESEARCH.md`. |
+| `docs/` | Deploy, research, open problems. Start at `docs/SIDECAR.md` and `docs/RESEARCH.md`. Dogfood: `docs/DOGFOOD.md`. |
 | `paper/` | Writeups. Do not treat them as the API. |
 
 Public entry point: `from voltmem import create_memory`. Low-level writes go through `MemoryLayer` (`observe` / `write` / `retrieve`).
@@ -107,7 +107,7 @@ Same idea on npm for `@voltmem/client`: workflow `publish-npm.yml`, environment 
 
 `Dockerfile` build-arg `EMBEDDINGS`:
 
-- `1` (default): sentence-transformers, tag `:latest` / version pin
+- `1` (default): sentence-transformers + CPU PyTorch (not CUDA), tag `:latest` / version pin
 - `0`: hashing scorer, tag `:slim` / `:<version>-slim`
 
 Publish workflow: `.github/workflows/publish-sidecar.yml`, on tags `sidecar-v*` — multi-arch (`linux/amd64`, `linux/arm64`). `GET /health` and `GET /ui` stay unauthenticated. `/v1/*` requires `X-API-Key` when `VOLTMEM_API_KEY` is set.

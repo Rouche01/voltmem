@@ -26,13 +26,14 @@ HTTP addresses a tenant as `/v1/tenants/{tenant_id}`. `/v1/users/{tenant_id}/…
 
 ```bash
 # Build from this repo's Dockerfile.
-# Default is the full image (sentence-transformers, VOLTMEM_EMBEDDINGS=1).
+# Default is the full image (sentence-transformers + CPU PyTorch, VOLTMEM_EMBEDDINGS=1).
 git clone https://github.com/Rouche01/voltmem.git && cd voltmem
 docker build -t voltmem-sidecar .
 
 # Slim image: hashing scorer, no PyTorch.
 # Enough when queries share tokens with the stored text.
 docker build --build-arg EMBEDDINGS=0 -t voltmem-sidecar:slim .
+
 
 docker run --rm -p 8080:8080 \
   -e VOLTMEM_API_KEY=dev-secret \

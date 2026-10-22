@@ -7,7 +7,9 @@ COPY pyproject.toml README.md ./
 COPY voltmem ./voltmem
 COPY sidecar ./sidecar
 
-# 1 installs sentence-transformers (PyTorch). 0 is the hashing scorer only.
+# 1 installs sentence-transformers (CPU PyTorch). 0 is the hashing scorer only.
+# Pin torch from the CPU wheel index first so pip does not pull CUDA + nvidia-*
+# (~5GB). Sidecar inference is CPU-only.
 ARG EMBEDDINGS=1
 
 RUN set -eu; \
@@ -19,7 +21,10 @@ RUN set -eu; \
       apt-get update \
       && apt-get install -y --no-install-recommends build-essential \
       && rm -rf /var/lib/apt/lists/* \
+      && pip install --no-cache-dir torch \
+           --index-url https://download.pytorch.org/whl/cpu \
       && pip install --no-cache-dir -e ".[sidecar,embeddings]" \
+      && python -c "import torch; assert torch.version.cuda is None, torch.__version__" \
       && apt-get purge -y --auto-remove build-essential \
       && rm -rf /var/lib/apt/lists/*; \
     else \
